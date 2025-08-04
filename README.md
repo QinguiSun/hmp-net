@@ -103,7 +103,7 @@ pip install torch-geometric
     │   ├── gvpgnn_hmp.py               # HMP Augmented GVP-GNN model
     │   ├── tfn_hmp.py                  # HMP Augmented Tensor Field Network model
     │   ├── mace_hmp.py                 # HMP Augmented MACE model
-    │   ├── layers                       # Layers for each HMP-Net model
+    │   ├── layers                      # Layers for each HMP-Net model
     └── modules                         # Modules and layers for MACE
 ```
 

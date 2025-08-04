@@ -92,6 +92,18 @@ pip install torch-geometric
     ├── tfn.py                          # Tensor Field Network model
     ├── mace.py                         # MACE model
     ├── layers                          # Layers for each model
+    ├── hmp                             # Modules and models for HMP-Net
+    |   |
+    │   ├── master_selection.py         # Master nodes selection module
+    │   ├── virtual_generation.py       # Virtual edges generation module
+    │   ├── schnet_hmp.py               # HMP Augmented SchNet Model
+    │   ├── dimenet_hmp.py              # HMP Augmented DimeNet model
+    │   ├── spherenet_hmp.py            # HMP Augmented SphereNet model
+    │   ├── egnn_hmp.py                 # HMP Augmented E(n) Equivariant GNN model
+    │   ├── gvpgnn_hmp.py               # HMP Augmented GVP-GNN model
+    │   ├── tfn_hmp.py                  # HMP Augmented Tensor Field Network model
+    │   ├── mace_hmp.py                 # HMP Augmented MACE model
+    │   ├── layers                       # Layers for each HMP-Net model
     └── modules                         # Modules and layers for MACE
 ```
 

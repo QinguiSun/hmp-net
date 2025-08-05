@@ -11,11 +11,11 @@ class HMPLayer(nn.Module):
     """
     A Hierarchical Message Passing (HMP) layer that wraps a backbone GNN layer.
     """
-    def __init__(self, backbone_layer, h_dim, s_dim, master_selection_hidden_dim, lambda_attn):
+    def __init__(self, backbone_layer, h_dim, s_dim, master_selection_hidden_dim, lambda_attn, master_rate):
         super().__init__()
         self.backbone_layer = backbone_layer
         self.s_dim = s_dim
-        self.master_selection = MasterSelection(in_dim=s_dim, hidden_dim=master_selection_hidden_dim)
+        self.master_selection = MasterSelection(in_dim=s_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate)
         self.virtual_generation = VirtualGeneration(in_dim=s_dim, lambda_attn=lambda_attn)
 
     def forward(self, h, pos, edge_index, batch):
@@ -97,7 +97,8 @@ class HMP_EGNNModel(torch.nn.Module):
                 h_dim=emb_dim,
                 s_dim=s_dim,
                 master_selection_hidden_dim=master_selection_hidden_dim,
-                lambda_attn=lambda_attn
+                lambda_attn=lambda_attn,
+                master_rate=self.master_rate
             )
             self.hmp_layers.append(hmp_layer)
 

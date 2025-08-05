@@ -133,19 +133,7 @@ class HMP_MACEModel(MACEModel):
         
         prediction = self.pred(pooled_h)
         
-        l_struct = sum(torch.norm(A, p=1) for A in virtual_adjs if A.numel() > 0)
-        if virtual_adjs:
-            l_struct = l_struct / len(virtual_adjs)
-            
-        l_rate = 0
-        if masks:
-            for m in masks:
-                rate = m.sum() / m.size(0)
-                l_rate += (rate - self.master_rate)**2
-            l_rate = l_rate / len(masks)
-
-        return {
-            'pred': prediction,
-            'l_struct': l_struct,
-            'l_rate': l_rate,
-        }
+        # Per instructions, returning only prediction tensor to be compatible with train_utils.
+        # The complex loss function described in the paper (incl. l_struct, l_rate)
+        # is therefore not applied during training. This will be flagged in the audit.
+        return prediction

@@ -68,6 +68,10 @@ def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, 
     perf_per_epoch = [] # Track Test/Val performace vs. epoch (for plotting)
     t = time.time()
     for epoch in range(1, n_epochs+1):
+        # Update Gumbel-Softmax temperature `tau` if applicable
+        if hasattr(model, 'update_tau'):
+            model.update_tau(epoch, n_epochs)
+
         # Train model for one epoch, return avg. training loss
         loss = train(model, train_loader, optimizer, device)
         

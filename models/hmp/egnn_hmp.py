@@ -20,7 +20,8 @@ class HMPLayer(nn.Module):
 
     def forward(self, h, pos, edge_index, batch):
         # 1. Local Propagation
-        h_update, pos_update = self.backbone_layer(h, pos, edge_index)
+        num_nodes = h.size(0)
+        h_update, pos_update = self.backbone_layer(h, pos, edge_index, size=(num_nodes, num_nodes))
         h_local = h + h_update  # Residual connection for features
         pos_local = pos_update  # No residual for coordinates
 
@@ -38,7 +39,7 @@ class HMPLayer(nn.Module):
         master_indices = torch.where(master_nodes_mask)[0]
         
         # Create induced subgraph for master nodes
-        edge_index_induced, _ = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=h.size(0))
+        edge_index_induced, _ = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=num_nodes)
         adj_induced = to_dense_adj(edge_index_induced, max_num_nodes=num_master_nodes).squeeze(0)
 
         h_master = h_local[master_nodes_mask]
@@ -52,7 +53,9 @@ class HMPLayer(nn.Module):
         edge_index_virtual, _ = dense_to_sparse(A_virtual)
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
 
-        h_master_update, pos_master_update = self.backbone_layer(h_master, pos_master, edge_index_master)
+        h_master_update, pos_master_update = self.backbone_layer(
+            h_master, pos_master, edge_index_master, size=(num_master_nodes, num_master_nodes)
+        )
         h_hierarchical = h_master + h_master_update
         pos_hierarchical = pos_master_update
 
@@ -108,6 +111,23 @@ class HMP_EGNNModel(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(emb_dim, out_dim)
         )
+
+    def update_tau(self, epoch, n_epochs):
+        """Update the Gumbel-Softmax temperature `tau` for all HMP layers."""
+
+        # Anneal tau from 1.0 to 0.1 over the first 50% of training epochs
+        # as described in the paper (Section 4.3)
+        initial_tau = 1.0
+        final_tau = 0.1
+        anneal_epochs = n_epochs // 2
+
+        if epoch <= anneal_epochs:
+            tau = initial_tau - (initial_tau - final_tau) * (epoch / anneal_epochs)
+        else:
+            tau = final_tau
+
+        for layer in self.hmp_layers:
+            layer.master_selection.tau.fill_(tau)
 
     def forward(self, batch):
         h = self.emb_in(batch.atoms)

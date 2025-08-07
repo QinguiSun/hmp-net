@@ -54,7 +54,7 @@ class MasterSelection(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
         )
-        self.tau = tau
+        self.register_buffer('tau', torch.tensor(tau))
         self.ratio = ratio
 
     def forward(

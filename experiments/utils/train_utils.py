@@ -47,7 +47,8 @@ def eval(model, loader, device):
     ) * 100  # return percentage
 
 
-def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, verbose=True, device='cpu'):
+# def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, verbose=True, device='cpu'):
+def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, verbose=True, device='cpu', tau_annealing=False):
     total_param = 0
     for param in model.parameters():
         total_param += np.prod(list(param.data.size()))
@@ -69,7 +70,8 @@ def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, 
     t = time.time()
     for epoch in range(1, n_epochs+1):
         # Update Gumbel-Softmax temperature `tau` if applicable
-        if hasattr(model, 'update_tau'):
+        # if hasattr(model, 'update_tau'):
+        if hasattr(model, 'update_tau') and tau_annealing:
             model.update_tau(epoch, n_epochs)
 
         # Train model for one epoch, return avg. training loss
@@ -107,7 +109,8 @@ def run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, n
     train_time_list = []
     for idx in tqdm(range(n_times)):
         seed(idx) # set random seed
-        best_val_acc, test_acc, train_time, _ = _run_experiment(model, train_loader, val_loader, test_loader, n_epochs, verbose, device)
+        # best_val_acc, test_acc, train_time, _ = _run_experiment(model, train_loader, val_loader, test_loader, n_epochs, verbose, device)
+        best_val_acc, test_acc, train_time, _ = _run_experiment(model, train_loader, val_loader, test_loader, n_epochs, verbose, device, tau_annealing=tau_annealing)
         best_val_acc_list.append(best_val_acc)
         test_acc_list.append(test_acc)
         train_time_list.append(train_time)

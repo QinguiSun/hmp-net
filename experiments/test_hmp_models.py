@@ -7,7 +7,12 @@ import numpy as np
 import time
 from sklearn.metrics import accuracy_score
 
+from models.hmp.schnet_hmp import HMP_SchNetModel
+from models.hmp.dimenet_hmp import HMP_DimeNetPPModel
+from models.hmp.spherenet_hmp import HMP_SphereNetModel
 from models.hmp.egnn_hmp import HMP_EGNNModel
+from models.hmp.gvpgnn_hmp import HMP_GVPGNNModel
+from models.hmp.tfn_hmp import HMP_TFNModel
 from models.hmp.mace_hmp import HMP_MACEModel
 
 # --- Data Creation (from kchains.ipynb) ---
@@ -96,9 +101,30 @@ if __name__ == '__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
+    
+    # Test HMP-SchNet
+    hmp_schnet = HMP_SchNetModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2)
+    run_test_experiment(hmp_schnet, train_loader, val_loader, test_loader, n_epochs, device)
+    
+    # Test HMP-DimeNet
+    hmp_dimenet = HMP_DimeNetPPModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2)
+    run_test_experiment(hmp_dimenet, train_loader, val_loader, test_loader, n_epochs, device)
+
+    # Test HMP-SphereNet
+    hmp_spherenet = HMP_SphereNetModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2)
+    run_test_experiment(hmp_spherenet, train_loader, val_loader, test_loader, n_epochs, device)
+
     # Test HMP-EGNN
     hmp_egnn = HMP_EGNNModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2, s_dim=16)
     run_test_experiment(hmp_egnn, train_loader, val_loader, test_loader, n_epochs, device)
+
+    # Test HMP-GVPGNN
+    hmp_gvpgnn = HMP_GVPGNNModel(num_layers=3, s_dim=32, v_dim=16, in_dim=1, out_dim=2)
+    run_test_experiment(hmp_gvpgnn, train_loader, val_loader, test_loader, n_epochs, device)
+
+    # Test HMP-TFN
+    hmp_tfn = HMP_TFNModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2)
+    run_test_experiment(hmp_tfn, train_loader, val_loader, test_loader, n_epochs, device)
     
     # Test HMP-MACE
     # MACE requires e3nn which might not be installed. Let's wrap it in a try-except block.

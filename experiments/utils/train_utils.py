@@ -101,7 +101,8 @@ def _run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, 
     return best_val_acc, test_acc, train_time, perf_per_epoch
 
 
-def run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, n_times=100, verbose=False, device='cpu'):
+# def run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, n_times=100, verbose=False, device='cpu'):
+def run_experiment(model, train_loader, val_loader, test_loader, n_epochs=100, n_times=100, verbose=False, device='cpu', tau_annealing=False): 
     print(f"Running experiment for {type(model).__name__} ({device}).")
     
     best_val_acc_list = []

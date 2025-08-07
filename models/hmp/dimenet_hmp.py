@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch_geometric.nn.models.dimenet_pp import InteractionBlock
+from torch_geometric.nn.models.dimenet import InteractionBlock
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
 
@@ -70,7 +70,7 @@ class HMPLayer(nn.Module):
 
         return h_final, pos_local, A_virtual, m
 
-class HMP_DimeNetPPModel(torch.nn.Module):
+class HMP_DimeNetModel(torch.nn.Module):
     def __init__(self, num_layers=5, emb_dim=128, in_dim=1, out_dim=1, s_dim=16,
                  master_selection_hidden_dim=32, lambda_attn=0.1, master_rate=0.25):
         super().__init__()

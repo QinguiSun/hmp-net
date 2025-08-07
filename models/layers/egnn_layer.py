@@ -47,7 +47,7 @@ class EGNNLayer(MessagePassing):
             self.activation,
         )
 
-    def forward(self, h, pos, edge_index):
+    def forward(self, h, pos, edge_index, size=None):
         """
         Args:
             h: (n, d) - initial node features
@@ -56,7 +56,7 @@ class EGNNLayer(MessagePassing):
         Returns:
             out: [(n, d),(n,3)] - updated node features
         """
-        out = self.propagate(edge_index, h=h, pos=pos)
+        out = self.propagate(edge_index, h=h, pos=pos, size=size)
         return out
 
     def message(self, h_i, h_j, pos_i, pos_j):

@@ -11,23 +11,21 @@ class HMPLayer(nn.Module):
     """
     A Hierarchical Message Passing (HMP) layer that wraps a backbone GNN layer.
     """
-    def __init__(self, backbone_layer, h_dim, s_dim, master_selection_hidden_dim, lambda_attn, master_rate):
+    def __init__(self, backbone_layer, h_dim, master_selection_hidden_dim, lambda_attn, master_rate):
         super().__init__()
         self.backbone_layer = backbone_layer
-        self.s_dim = s_dim
-        self.master_selection = MasterSelection(in_dim=s_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate)
-        self.virtual_generation = VirtualGeneration(in_dim=s_dim, lambda_attn=lambda_attn)
+        self.master_selection = MasterSelection(in_dim=h_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate)
+        self.virtual_generation = VirtualGeneration(in_dim=h_dim, lambda_attn=lambda_attn)
 
     def forward(self, h, pos, edge_index, batch):
         # 1. Local Propagation
         num_nodes = h.size(0)
-        h_update, pos_update = self.backbone_layer(h, pos, edge_index, size=(num_nodes, num_nodes))
+        h_update, pos_update = self.backbone_layer(h, pos, edge_index)
         h_local = h + h_update  # Residual connection for features
         pos_local = pos_update  # No residual for coordinates
 
         # 2. Invariant Topology Learning
-        h_scalar = h_local[:, :self.s_dim]
-        m, _ = self.master_selection(h_scalar) # m is the soft mask
+        m, _ = self.master_selection(h_local) # m is the soft mask
         
         master_nodes_mask = m > 0.5
         num_master_nodes = master_nodes_mask.sum()
@@ -44,17 +42,16 @@ class HMPLayer(nn.Module):
 
         h_master = h_local[master_nodes_mask]
         pos_master = pos_local[master_nodes_mask]
-        h_master_scalar = h_master[:, :self.s_dim]
 
         # Generate virtual edges
-        A_virtual = self.virtual_generation(h_master_scalar, adj_induced)
+        A_virtual = self.virtual_generation(h_master, adj_induced)
         
         # 3. Hierarchical Propagation
         edge_index_virtual, _ = dense_to_sparse(A_virtual)
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
 
         h_master_update, pos_master_update = self.backbone_layer(
-            h_master, pos_master, edge_index_master, size=(num_master_nodes, num_master_nodes)
+            h_master, pos_master, edge_index_master
         )
         h_hierarchical = h_master + h_master_update
         pos_hierarchical = pos_master_update
@@ -82,7 +79,6 @@ class HMP_EGNNModel(torch.nn.Module):
         emb_dim: int = 128,
         in_dim: int = 1,
         out_dim: int = 1,
-        s_dim: int = 16, # Dimension of scalar features for attention
         master_selection_hidden_dim: int = 32,
         lambda_attn: float = 0.1,
         master_rate: float = 0.25,
@@ -98,7 +94,6 @@ class HMP_EGNNModel(torch.nn.Module):
             hmp_layer = HMPLayer(
                 backbone_layer=egnn_layer,
                 h_dim=emb_dim,
-                s_dim=s_dim,
                 master_selection_hidden_dim=master_selection_hidden_dim,
                 lambda_attn=lambda_attn,
                 master_rate=self.master_rate

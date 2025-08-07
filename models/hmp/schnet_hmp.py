@@ -24,7 +24,7 @@ class SchNetInteraction(nn.Module):
         # or that the interaction block can handle it.
         # A more complete implementation would need to handle the Gaussian smearing here.
         # For the k-chains task, this simplification should be acceptable.
-        edge_attr = self.interaction_block.distance_expansion(edge_weight)
+        edge_attr = self.interaction_block.distance_expansion(edge_weight.long())
         h_update = self.interaction_block(h, edge_index, edge_weight, edge_attr)
         return h_update, pos # Return pos unchanged as SchNet is invariant
 

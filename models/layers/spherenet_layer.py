@@ -562,3 +562,31 @@ def xyz_to_dat(pos, edge_index, num_nodes, use_torsion = False):
     
     else:
         return dist, angle, i, j, idx_kj, idx_ji
+
+
+class SphereNetLayer(nn.Module):
+    """
+    Wrapper for a single SphereNet layer.
+    """
+    def __init__(self, hidden_channels, out_emb_channels, int_emb_size, basis_emb_size_dist,
+                 basis_emb_size_angle, basis_emb_size_torsion, num_spherical, num_radial,
+                 num_before_skip, num_after_skip, act, num_output_layers, output_init, out_channels=1):
+        super(SphereNetLayer, self).__init__()
+        self.update_e = update_e(hidden_channels, int_emb_size, basis_emb_size_dist,
+                                 basis_emb_size_angle, basis_emb_size_torsion, num_spherical,
+                                 num_radial, num_before_skip, num_after_skip, act)
+        self.update_v = update_v(hidden_channels, out_emb_channels, out_channels,
+                                 num_output_layers, act, output_init)
+
+    def forward(self, e, v, i, emb, idx_kj, idx_ji):
+        """
+        Forward pass for the SphereNet layer.
+        Note: This signature is not directly compatible with the HMPLayer,
+        which expects a backbone with a forward(h, pos, edge_index) signature.
+        The discrepancy is handled in the HMP_SphereNetModel.
+        """
+        e = self.update_e(e, emb, idx_kj, idx_ji)
+        v_update = self.update_v(e, i)
+        # In the original SphereNet, 'v' is updated residually.
+        # We return the update to be applied in the main model.
+        return e, v_update

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch_geometric.nn import SchNet
+from torch_geometric.nn import no
 from torch_geometric.nn.models.schnet import InteractionBlock
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
@@ -85,7 +85,7 @@ class HMP_SchNetModel(torch.nn.Module):
 
         self.hmp_layers = nn.ModuleList()
         for _ in range(num_layers):
-            interaction = InteractionBlock(emb_dim, 128, 50, 10.0)
+            interaction = InteractionBlock(emb_dim, emb_dim, 128, 10.0)
             # This is a hack, the real distance_expansion is in the main SchNet model
             interaction.distance_expansion = self.distance_expansion
             schnet_layer = SchNetInteraction(interaction)

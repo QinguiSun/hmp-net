@@ -110,7 +110,7 @@ class HMP_SphereNetModel(torch.nn.Module):
 
         self.emb = emb(num_spherical, num_radial, self.cutoff, envelope_exponent)
         self.init_e = init(num_radial, emb_dim, act, use_node_features=use_node_features)
-        self.init_v = update_v(emb_dim, out_emb_channels, out_dim, num_output_layers, act, output_init)
+        self.init_v = update_v(emb_dim, out_emb_channels, emb_dim, num_output_layers, act, output_init)
     
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
@@ -128,7 +128,7 @@ class HMP_SphereNetModel(torch.nn.Module):
                 act=act,
                 num_output_layers=num_output_layers,
                 output_init=output_init,
-                out_channels=out_dim,
+                out_channels=emb_dim,
             )
             hmp_layer = HMPLayer(
                 backbone_layer=spherenet_layer,
@@ -172,7 +172,6 @@ class HMP_SphereNetModel(torch.nn.Module):
 
         e = self.init_e(z, emb, i, j)
         v = self.init_v(e, i)
-        print(f"the shape of `v`: {v.shape}")
         
         virtual_adjs = []
         masks = []
@@ -185,8 +184,6 @@ class HMP_SphereNetModel(torch.nn.Module):
 
             # 1. Local Propagation
             e_local, v_update_local = spherenet_layer(e, v, i, emb, idx_kj, idx_ji)
-            print(f"the shape of `v`: {v.shape}")
-            print(f"the shape of `v_update_local.shape`: {v_update_local.shape}")
             v_local = v + v_update_local
 
             # 2. Invariant Topology Learning (Master Node Selection)
@@ -207,8 +204,40 @@ class HMP_SphereNetModel(torch.nn.Module):
 
             # 3. Hierarchical Propagation
             # Create master subgraph
-            edge_index_master, edge_mask_master = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=num_nodes, return_edge_mask=True)
+            edge_index_master, _, edge_mask_master = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=num_nodes, return_edge_mask=True)
+            '''
+            sub_out = subgraph(
+                master_indices, edge_index, e,  # 显式传入 edge_attr=e
+                relabel_nodes=True,
+                num_nodes=num_nodes,
+                return_edge_mask=True
+            )
+
+            # 兼容：有 edge_attr 返回三元组；无 edge_attr 返回二元组
+            if isinstance(sub_out, tuple) and len(sub_out) == 3:
+                edge_index_master, e_master, edge_mask_master = sub_out
+            elif isinstance(sub_out, tuple) and len(sub_out) == 2:
+                edge_index_master, edge_mask_master = sub_out
+                e_master = e[edge_mask_master] if e is not None else None
+            else:
+                # 理论上不会走到这里
+                raise RuntimeError(f"Unexpected subgraph() output: {type(sub_out)} with length {getattr(sub_out, '__len__', lambda: 'NA')()}")
+            '''
+            # 后续一律用子图的边特征 e_master，而不是原图的 e
             pos_master = pos[master_nodes_mask]
+          
+            def safe_shape(x):
+                try:
+                    return tuple(x.shape)
+                except Exception:
+                    if isinstance(x, (list, tuple)):
+                        return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                    return type(x).__name__
+
+            #print("edge_index_master:", safe_shape(edge_index_master))
+            #print("e_master:", safe_shape(e_master))
+            #print("edge_mask_master:", safe_shape(edge_mask_master))
+
 
             # Geometric features for master subgraph
             dist_master, angle_master, torsion_master, i_master, j_master, idx_kj_master, idx_ji_master = xyz_to_dat(pos_master, edge_index_master, num_master_nodes, use_torsion=True)
@@ -220,7 +249,10 @@ class HMP_SphereNetModel(torch.nn.Module):
 
             # Hierarchical update
             e_hier, v_update_hier = spherenet_layer(e_master, v_master, i_master, emb_master, idx_kj_master, idx_ji_master)
-            v_hier = v_master + v_update_hier
+            if v_update_hier.size(0) > 0:
+                v_hier = v_master + v_update_hier
+            else:
+                v_hier = v_master
 
             # 4. Feature Aggregation
             v_hier_expanded = torch.zeros_like(v_local)

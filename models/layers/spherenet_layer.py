@@ -595,9 +595,9 @@ class SphereNetLayer(nn.Module):
             except AttributeError:
                 return type(x).__name__
 
-        print(f"the shape of `e`: {_shape(e)}")
-        print(f"the shape of `v`: {_shape(v)}")
-        print(f"the shape of `v_update`: {_shape(v_update)}")
+        #print(f"the shape of `e`: {_shape(e)}")
+        #print(f"the shape of `v`: {_shape(v)}")
+        #print(f"the shape of `v_update`: {_shape(v_update)}")
 
         # In the original SphereNet, 'v' is updated residually.
         # We return the update to be applied in the main model.

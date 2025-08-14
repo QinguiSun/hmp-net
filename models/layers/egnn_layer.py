@@ -73,12 +73,24 @@ class EGNNLayer(MessagePassing):
         print(f"shape of pos_diff: {pos_diff.shape}")
         return msg, pos_diff
 
-    def aggregate(self, inputs, index):
+    def aggregate(self, inputs, index, ptr=None, dim_size=None):
         msgs, pos_diffs = inputs
         # Aggregate messages
-        msg_aggr = scatter(msgs, index, dim=self.node_dim, reduce=self.aggr)
+        msg_aggr = scatter(
+            msgs,
+            index,
+            dim=self.node_dim,
+            reduce=self.aggr,
+            dim_size=dim_size,
+        )
         # Aggregate displacement vectors
-        pos_aggr = scatter(pos_diffs, index, dim=self.node_dim, reduce="mean")
+        pos_aggr = scatter(
+            pos_diffs,
+            index,
+            dim=self.node_dim,
+            reduce="mean",
+            dim_size=dim_size,
+        )
         print(f"shape of msg_aggr: {msg_aggr.shape}")
         print(f"shape of pos_aggr: {pos_aggr.shape}")
         return msg_aggr, pos_aggr

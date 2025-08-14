@@ -587,6 +587,18 @@ class SphereNetLayer(nn.Module):
         """
         e = self.update_e(e, emb, idx_kj, idx_ji)
         v_update = self.update_v(e, i)
+        
+        # 安全打印：既能打印张量的 shape，也能打印 tuple 里各元素的 shape
+        def _shape(x):
+            try:
+                return tuple(x.shape)
+            except AttributeError:
+                return type(x).__name__
+
+        print(f"the shape of `e`: {_shape(e)}")
+        print(f"the shape of `v`: {_shape(v)}")
+        print(f"the shape of `v_update`: {_shape(v_update)}")
+
         # In the original SphereNet, 'v' is updated residually.
         # We return the update to be applied in the main model.
         return e, v_update

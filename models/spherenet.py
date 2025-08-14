@@ -105,6 +105,16 @@ class SphereNetModel(torch.nn.Module):
             v = update_v(e, i)
             # Disable virutal node trick
             # u = update_u(u, v, batch)
-        
+            
+            # 安全打印：既能打印张量的 shape，也能打印 tuple 里各元素的 shape
+            def _shape(x):
+                try:
+                    return tuple(x.shape)
+                except AttributeError:
+                    return type(x).__name__
+
+            print(f"the shape of `e`: {_shape(e)}")
+            print(f"the shape of `v`: {_shape(v)}")
+            
         out = scatter(v, batch, dim=0, reduce='add')
         return out

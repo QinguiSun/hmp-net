@@ -7,47 +7,6 @@ from models.layers.spherenet_layer import *
 from models.hmp.master_selection import MasterSelection
 from models.hmp.virtual_generation import VirtualGeneration
 
-class SphereNetLayer(nn.Module):
-    """Wrapper for operations of spherenet_layer.py
-    'spherenet_layer = SphereNetLayer(emb_dim, emb_dim, 7, 5)'
-
-    Args:
-        nn (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    def __init__(
-        self,
-        hidden_channels,
-        int_emb_size,
-        out_emb_channels,
-        out_dim,
-        num_output_layers,
-        act,
-        output_init,
-        basis_emb_size_dist,
-        basis_emb_size_angle,
-        basis_emb_size_torsion,
-        num_spherical,
-    ):
-        super(SphereNetLayer, self).__init__()
-        
-        self.update_vs = update_v(hidden_channels, out_emb_channels, out_dim, num_output_layers, act, output_init) 
-
-        self.update_es = update_e(hidden_channels, int_emb_size, basis_emb_size_dist, basis_emb_size_angle, basis_emb_size_torsion, num_spherical, num_radial, num_before_skip, num_after_skip,act) 
-
-        self.update_us = update_u() 
-          
-    def forward(self, batch_data):
-        z, pos, batch = batch_data.atoms, batch_data.pos, batch_data.batch
-        edge_index = batch_data.edge_index
-        num_nodes = z.size(0)
-        dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True) 
-         
-        for update_e, update_v, update_u in zip(self.update_es, self.update_vs, self.update_us):
-            e = update_e(e, emb, idx_kj, idx_ji)
-            v = update_v(e, i)
             
 class HMPLayer(nn.Module):
     """
@@ -126,26 +85,51 @@ class HMP_SphereNetModel(torch.nn.Module):
         master_selection_hidden_dim: int = 32,
         lambda_attn: float = 0.1,
         master_rate: float = 0.25,
+        # SphereNet specific params
+        int_emb_size: int = 64,
+        basis_emb_size_dist: int = 8,
+        basis_emb_size_angle: int = 8,
+        basis_emb_size_torsion: int = 8,
+        out_emb_channels: int = 256,
+        num_spherical: int = 7,
+        num_radial: int = 6,
+        cutoff: float = 5.0,
+        envelope_exponent: int = 5,
+        num_before_skip: int = 1,
+        num_after_skip: int = 2,
+        num_output_layers: int = 3,
+        act=swish,
+        output_init: str = 'GlorotOrthogonal',
+        use_node_features: bool = True,
     ):
         super().__init__()
         
         self.master_rate = master_rate
         self.num_layers = num_layers
-        '''
-        self.hmp_layer = HMPLayer(
-            backbone_layer=spherenet_layer,
-            h_dim=emb_dim,
-            s_dim=s_dim,
-            master_selection_hidden_dim=master_selection_hidden_dim,
-            lambda_attn=lambda_attn,
-            master_rate=self.master_rate
-        )
+        self.cutoff = cutoff
 
-        self.emb_in = torch.nn.Embedding(in_dim, emb_dim)
-        '''
+        self.emb = emb(num_spherical, num_radial, self.cutoff, envelope_exponent)
+        self.init_e = init(num_radial, emb_dim, act, use_node_features=use_node_features)
+        self.init_v = update_v(emb_dim, out_emb_channels, out_dim, num_output_layers, act, output_init)
+
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
-            spherenet_layer = SphereNetLayer(emb_dim, emb_dim, 7, 5)
+            spherenet_layer = SphereNetLayer(
+                hidden_channels=emb_dim,
+                out_emb_channels=out_emb_channels,
+                int_emb_size=int_emb_size,
+                basis_emb_size_dist=basis_emb_size_dist,
+                basis_emb_size_angle=basis_emb_size_angle,
+                basis_emb_size_torsion=basis_emb_size_torsion,
+                num_spherical=num_spherical,
+                num_radial=num_radial,
+                num_before_skip=num_before_skip,
+                num_after_skip=num_after_skip,
+                act=act,
+                num_output_layers=num_output_layers,
+                output_init=output_init,
+                out_channels=emb_dim,
+            )
             hmp_layer = HMPLayer(
                 backbone_layer=spherenet_layer,
                 h_dim=emb_dim,
@@ -177,34 +161,83 @@ class HMP_SphereNetModel(torch.nn.Module):
         for layer in self.hmp_layers:
             layer.master_selection.tau.fill_(tau)
 
-    def forward(self, batch):
-        
-        z, pos, batch = batch.atoms, batch.pos, batch.batch
-        edge_index = batch.edge_index
+    def forward(self, batch_data):
+        z, pos, batch = batch_data.atoms, batch_data.pos, batch_data.batch
+        edge_index = batch_data.edge_index
         num_nodes = z.size(0)
+
         dist, angle, torsion, i, j, idx_kj, idx_ji = xyz_to_dat(pos, edge_index, num_nodes, use_torsion=True)
         
         emb = self.emb(dist, angle, torsion, idx_kj)
 
-        # Initialize edge, node, graph features
         e = self.init_e(z, emb, i, j)
         v = self.init_v(e, i)
-        # Disable virutal node trick
-        # u = self.init_u(torch.zeros_like(scatter(v, batch, dim=0)), v, batch)
         
         virtual_adjs = []
         masks = []
         
-        for _ in range(self.num_layers):
-            for update_e, update_v, update_u in zip(self.update_es, self.update_vs, self.update_us):
-                e = update_e(e, emb, idx_kj, idx_ji)
-                v = update_v(e, i)
-                e, pos, A_virtual, m = self.hmp_layer(e, pos, edge_index, batch)
-                # Disable virutal node trick
-                # u = update_u(u, v, batch)
-                virtual_adjs.append(A_virtual)
-                masks.append(m)
+        for hmp_layer in self.hmp_layers:
+            # The HMPLayer is not directly compatible with SphereNet's update mechanism.
+            # We manually implement the HMP logic here to resolve the discrepancy.
 
-        pooled_h = self.pool(v, batch.batch)
+            spherenet_layer = hmp_layer.backbone_layer
+
+            # 1. Local Propagation
+            e_local, v_update_local = spherenet_layer(e, v, i, emb, idx_kj, idx_ji)
+            v_local = v + v_update_local
+
+            # 2. Invariant Topology Learning (Master Node Selection)
+            h_scalar = v_local[:, :hmp_layer.s_dim]
+            m, _ = hmp_layer.master_selection(h_scalar)
+
+            master_nodes_mask = m > 0.5
+            num_master_nodes = master_nodes_mask.sum()
+
+            if num_master_nodes <= 1:
+                # Skip hierarchical message passing
+                e, v = e_local, v_local
+                virtual_adjs.append(torch.zeros((0, 0), device=e[0].device))
+                masks.append(m)
+                continue
+
+            master_indices = torch.where(master_nodes_mask)[0]
+
+            # 3. Hierarchical Propagation
+            # Create master subgraph
+            edge_index_master, edge_mask_master = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=num_nodes, return_edge_mask=True)
+            pos_master = pos[master_nodes_mask]
+
+            # Geometric features for master subgraph
+            dist_master, angle_master, torsion_master, i_master, j_master, idx_kj_master, idx_ji_master = xyz_to_dat(pos_master, edge_index_master, num_master_nodes, use_torsion=True)
+            emb_master = self.emb(dist_master, angle_master, torsion_master, idx_kj_master)
+
+            # Edge and node features for master subgraph
+            e_master = (e_local[0][edge_mask_master], e_local[1][edge_mask_master])
+            v_master = v_local[master_nodes_mask]
+
+            # Hierarchical update
+            e_hier, v_update_hier = spherenet_layer(e_master, v_master, i_master, emb_master, idx_kj_master, idx_ji_master)
+            v_hier = v_master + v_update_hier
+
+            # 4. Feature Aggregation
+            v_hier_expanded = torch.zeros_like(v_local)
+            v_hier_expanded[master_nodes_mask] = v_hier
+
+            m_expanded = m.unsqueeze(1)
+            v_final = (1 - m_expanded) * v_local + m_expanded * v_hier_expanded
+
+            # We need to aggregate edge features too, but HMPLayer doesn't do this.
+            # For simplicity, we use the locally propagated edge features.
+            e_final = e_local
+
+            v = v_final
+            e = e_final
+
+            masks.append(m)
+            # virtual_adjs are not computed in this simplified integration.
+            virtual_adjs.append(torch.zeros((0, 0), device=e[0].device))
+
+
+        pooled_h = self.pool(v, batch)
         prediction = self.pred(pooled_h)
         return prediction

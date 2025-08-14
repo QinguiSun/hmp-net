@@ -28,7 +28,7 @@ class HMPLayer(nn.Module):
         m, _ = self.master_selection(h_local) # m is the soft mask
         
         master_nodes_mask = m > 0.5
-        num_master_nodes = master_nodes_mask.sum()
+        num_master_nodes = int(master_nodes_mask.sum())
 
         if num_master_nodes <= 1:
             # Not enough master nodes, skip hierarchical message passing
@@ -56,7 +56,10 @@ class HMPLayer(nn.Module):
         print(f"shape of edge_index_master: {edge_index_master.shape}")
         print("+++++++++++++++++++++++++++++++++++++++++++")
         h_master_update, pos_master_update = self.backbone_layer(
-            h_master, pos_master, edge_index_master
+            h_master,
+            pos_master,
+            edge_index_master,
+            size=(num_master_nodes, num_master_nodes),
         )
         print("-------------------------------------------")
         print(f"shape of h_master_update: {h_master.shape}")

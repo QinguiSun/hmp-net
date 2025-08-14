@@ -111,7 +111,7 @@ class HMP_SphereNetModel(torch.nn.Module):
         self.emb = emb(num_spherical, num_radial, self.cutoff, envelope_exponent)
         self.init_e = init(num_radial, emb_dim, act, use_node_features=use_node_features)
         self.init_v = update_v(emb_dim, out_emb_channels, out_dim, num_output_layers, act, output_init)
-
+    
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
             spherenet_layer = SphereNetLayer(
@@ -128,7 +128,7 @@ class HMP_SphereNetModel(torch.nn.Module):
                 act=act,
                 num_output_layers=num_output_layers,
                 output_init=output_init,
-                out_channels=emb_dim,
+                out_channels=out_dim,
             )
             hmp_layer = HMPLayer(
                 backbone_layer=spherenet_layer,
@@ -172,6 +172,7 @@ class HMP_SphereNetModel(torch.nn.Module):
 
         e = self.init_e(z, emb, i, j)
         v = self.init_v(e, i)
+        print(f"the shape of `v`: {v.shape}")
         
         virtual_adjs = []
         masks = []
@@ -184,6 +185,8 @@ class HMP_SphereNetModel(torch.nn.Module):
 
             # 1. Local Propagation
             e_local, v_update_local = spherenet_layer(e, v, i, emb, idx_kj, idx_ji)
+            print(f"the shape of `v`: {v.shape}")
+            print(f"the shape of `v_update_local.shape`: {v_update_local.shape}")
             v_local = v + v_update_local
 
             # 2. Invariant Topology Learning (Master Node Selection)

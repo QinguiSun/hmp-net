@@ -49,22 +49,12 @@ class HMPLayer(nn.Module):
         # 3. Hierarchical Propagation
         edge_index_virtual, _ = dense_to_sparse(A_virtual)
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
-
-        print("+++++++++++++++++++++++++++++++++++++++++++")
-        print(f"shape of h_master: {h_master.shape}")
-        print(f"shape of pos_master: {pos_master.shape}")
-        print(f"shape of edge_index_master: {edge_index_master.shape}")
-        print("+++++++++++++++++++++++++++++++++++++++++++")
         h_master_update, pos_master_update = self.backbone_layer(
             h_master,
             pos_master,
             edge_index_master,
             size=(num_master_nodes, num_master_nodes),
         )
-        print("-------------------------------------------")
-        print(f"shape of h_master_update: {h_master.shape}")
-        print(f"shape of pos_master_update: {pos_master_update.shape}")
-        print("-------------------------------------------")
         h_hierarchical = h_master + h_master_update
         pos_hierarchical = pos_master_update
 

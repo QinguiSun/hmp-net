@@ -65,18 +65,26 @@ class reshape_irreps(torch.nn.Module):
     def __init__(self, irreps: o3.Irreps) -> None:
         super().__init__()
         self.irreps = irreps
+        self.output_dim = max([ir.dim for _, ir in irreps])
+        self.pad_list = [self.output_dim - ir.dim for _, ir in irreps]
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         ix = 0
         out = []
         batch, _ = tensor.shape
-        for mul, ir in self.irreps:
+        for i, (mul, ir) in enumerate(self.irreps):
             d = ir.dim
-            field = tensor[:, ix : ix + mul * d]  # [batch, sample, mul * repr]
+            field = tensor[:, ix : ix + mul * d]
             ix += mul * d
             field = field.reshape(batch, mul, d)
+            # Pad the last dimension
+            if self.pad_list[i] > 0:
+                padding = torch.zeros(
+                    batch, mul, self.pad_list[i], device=tensor.device, dtype=tensor.dtype
+                )
+                field = torch.cat([field, padding], dim=-1)
             out.append(field)
-        return torch.cat(out, dim=-1)
+        return torch.cat(out, dim=1)
 
 
 def irreps2gate(irreps):

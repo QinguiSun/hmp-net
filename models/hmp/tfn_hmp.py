@@ -2,103 +2,138 @@ import torch
 from torch import nn
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
+import e3nn
 
+from models.mace_modules.blocks import RadialEmbeddingBlock
 from models.layers.tfn_layer import TensorProductConvLayer
 from models.hmp.master_selection import MasterSelection
 from models.hmp.virtual_generation import VirtualGeneration
 
+
 class HMPLayer(nn.Module):
-    """
-    A Hierarchical Message Passing (HMP) layer that wraps a backbone GNN layer.
-    """
-    def __init__(self, backbone_layer, h_dim, s_dim, master_selection_hidden_dim, lambda_attn, master_rate):
+    """Hierarchical Message Passing layer wrapping a TFN convolution."""
+
+    def __init__(
+        self,
+        conv: TensorProductConvLayer,
+        s_dim: int,
+        master_selection_hidden_dim: int,
+        lambda_attn: float,
+        master_rate: float,
+        spherical_harmonics: e3nn.o3.SphericalHarmonics,
+        radial_embedding: RadialEmbeddingBlock,
+    ) -> None:
         super().__init__()
-        self.backbone_layer = backbone_layer
+        self.conv = conv
         self.s_dim = s_dim
-        self.master_selection = MasterSelection(in_dim=s_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate)
-        self.virtual_generation = VirtualGeneration(in_dim=s_dim, lambda_attn=lambda_attn)
+        self.spherical_harmonics = spherical_harmonics
+        self.radial_embedding = radial_embedding
+        self.master_selection = MasterSelection(
+            in_dim=s_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate
+        )
+        self.virtual_generation = VirtualGeneration(
+            in_dim=s_dim, lambda_attn=lambda_attn
+        )
 
-    def forward(self, h, pos, edge_index, batch):
-        # 1. Local Propagation
-        num_nodes = h[0].size(0)
-        h_update, _ = self.backbone_layer(h, pos, edge_index)
-        h_local = (h[0] + h_update[0], h[1] + h_update[1]) # Residual connection for features
-        pos_local = pos
+    def forward(self, h: torch.Tensor, pos: torch.Tensor, edge_index: torch.Tensor):
+        # Local propagation
+        vectors = pos[edge_index[0]] - pos[edge_index[1]]
+        lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)
+        edge_sh = self.spherical_harmonics(vectors)
+        edge_feats = self.radial_embedding(lengths)
 
-        # 2. Invariant Topology Learning
-        h_scalar = h_local[0][:, :self.s_dim]
-        m, _ = self.master_selection(h_scalar) # m is the soft mask
+        h_update = self.conv(h, edge_index, edge_sh, edge_feats)
+        h_local = h + h_update
 
+        # Invariant topology learning
+        h_scalar = h_local[:, :self.s_dim]
+        m, _ = self.master_selection(h_scalar)
         master_nodes_mask = m > 0.5
         num_master_nodes = master_nodes_mask.sum()
 
         if num_master_nodes <= 1:
-            # Not enough master nodes, skip hierarchical message passing
-            return h_local, pos_local, torch.zeros((0, 0), device=h[0].device), m
+            return h_local, pos, torch.zeros((0, 0), device=h.device), m
 
         master_indices = torch.where(master_nodes_mask)[0]
+        edge_index_induced, _ = subgraph(
+            master_indices, edge_index, relabel_nodes=True, num_nodes=h.size(0)
+        )
+        adj_induced = to_dense_adj(
+            edge_index_induced, max_num_nodes=num_master_nodes
+        ).squeeze(0)
 
-        # Create induced subgraph for master nodes
-        edge_index_induced, _ = subgraph(master_indices, edge_index, relabel_nodes=True, num_nodes=num_nodes)
-        adj_induced = to_dense_adj(edge_index_induced, max_num_nodes=num_master_nodes).squeeze(0)
+        h_master = h_local[master_nodes_mask]
+        pos_master = pos[master_nodes_mask]
+        h_master_scalar = h_master[:, :self.s_dim]
 
-        h_master = (h_local[0][master_nodes_mask], h_local[1][master_nodes_mask])
-        pos_master = pos_local[master_nodes_mask]
-        h_master_scalar = h_master[0][:, :self.s_dim]
-
-        # Generate virtual edges
+        # Virtual edge generation
         A_virtual = self.virtual_generation(h_master_scalar, adj_induced)
-
-        # 3. Hierarchical Propagation
         edge_index_virtual, _ = dense_to_sparse(A_virtual)
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
 
-        h_master_update, _ = self.backbone_layer(
-            h_master, pos_master, edge_index_master
-        )
-        h_hierarchical = (h_master[0] + h_master_update[0], h_master[1] + h_master_update[1])
-        pos_hierarchical = pos_master
+        vectors_master = pos_master[edge_index_master[0]] - pos_master[edge_index_master[1]]
+        lengths_master = torch.linalg.norm(vectors_master, dim=-1, keepdim=True)
+        edge_sh_master = self.spherical_harmonics(vectors_master)
+        edge_feats_master = self.radial_embedding(lengths_master)
 
-        # 4. Feature Aggregation
-        h_hierarchical_expanded = (torch.zeros_like(h_local[0]), torch.zeros_like(h_local[1]))
-        h_hierarchical_expanded[0][master_nodes_mask] = h_hierarchical[0]
-        h_hierarchical_expanded[1][master_nodes_mask] = h_hierarchical[1]
+        h_master_update = self.conv(h_master, edge_index_master, edge_sh_master, edge_feats_master)
+        h_hierarchical = h_master + h_master_update
+
+        h_hierarchical_expanded = torch.zeros_like(h_local)
+        h_hierarchical_expanded[master_nodes_mask] = h_hierarchical
 
         m_expanded = m.unsqueeze(1)
-        h_final_scalar = (1 - m_expanded) * h_local[0] + m_expanded * h_hierarchical_expanded[0]
-        h_final_vector = (1 - m_expanded).unsqueeze(-1) * h_local[1] + m_expanded.unsqueeze(-1) * h_hierarchical_expanded[1]
-        h_final = (h_final_scalar, h_final_vector)
-        pos_final = pos_local
+        h_final = (1 - m_expanded) * h_local + m_expanded * h_hierarchical_expanded
 
-        return h_final, pos_final, A_virtual, m
+        return h_final, pos, A_virtual, m
 
 
-class HMP_TFNModel(torch.nn.Module):
-    """
-    HMP-enhanced TFN model.
-    """
+class HMP_TFNModel(nn.Module):
+    """Tensor Field Network model with Hierarchical Message Passing."""
+
     def __init__(
         self,
+        r_max: float = 10.0,
+        num_bessel: int = 8,
+        num_polynomial_cutoff: int = 5,
+        max_ell: int = 2,
         num_layers: int = 5,
         emb_dim: int = 128,
+        hidden_irreps: e3nn.o3.Irreps | None = None,
+        mlp_dim: int = 256,
         in_dim: int = 1,
         out_dim: int = 1,
-        s_dim: int = 16, # Dimension of scalar features for attention
+        aggr: str = "sum",
+        gate: bool = True,
+        batch_norm: bool = False,
+        s_dim: int = 16,
         master_selection_hidden_dim: int = 32,
         lambda_attn: float = 0.1,
         master_rate: float = 0.25,
-    ):
+    ) -> None:
         super().__init__()
-        self.master_rate = master_rate
+        self.emb_dim = emb_dim
 
-        self.emb_in = torch.nn.Embedding(in_dim, emb_dim)
+        # Edge embedding modules
+        self.radial_embedding = RadialEmbeddingBlock(
+            r_max=r_max,
+            num_bessel=num_bessel,
+            num_polynomial_cutoff=num_polynomial_cutoff,
+        )
+        sh_irreps = e3nn.o3.Irreps.spherical_harmonics(max_ell)
+        self.spherical_harmonics = e3nn.o3.SphericalHarmonics(
+            sh_irreps, normalize=True, normalization="component"
+        )
 
-        self.hmp_layers = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            tfn_layer = TFNLayer(emb_dim, emb_dim, activation="relu", norm="layer", aggr="sum")
-            
+        if hidden_irreps is None:
+            hidden_irreps = (sh_irreps * emb_dim).sort()[0].simplify()
+        self.hidden_irreps = hidden_irreps
+
+        # Convolution layers
+        self.convs = nn.ModuleList()
+        self.convs.append(
             TensorProductConvLayer(
-                in_irreps=e3nn.o3.Irreps(f'{emb_dim}x0e'),
+                in_irreps=e3nn.o3.Irreps(f"{emb_dim}x0e"),
                 out_irreps=hidden_irreps,
                 sh_irreps=sh_irreps,
                 edge_feats_dim=self.radial_embedding.out_dim,
@@ -107,26 +142,45 @@ class HMP_TFNModel(torch.nn.Module):
                 batch_norm=batch_norm,
                 gate=gate,
             )
-                        
-            hmp_layer = HMPLayer(
-                backbone_layer=tfn_layer,
-                h_dim=emb_dim,
+        )
+        for _ in range(num_layers - 1):
+            self.convs.append(
+                TensorProductConvLayer(
+                    in_irreps=hidden_irreps,
+                    out_irreps=hidden_irreps,
+                    sh_irreps=sh_irreps,
+                    edge_feats_dim=self.radial_embedding.out_dim,
+                    mlp_dim=mlp_dim,
+                    aggr=aggr,
+                    batch_norm=batch_norm,
+                    gate=gate,
+                )
+            )
+
+        # Wrap convolutions with HMP layers
+        self.hmp_layers = nn.ModuleList()
+        for conv in self.convs:
+            layer = HMPLayer(
+                conv=conv,
                 s_dim=s_dim,
                 master_selection_hidden_dim=master_selection_hidden_dim,
                 lambda_attn=lambda_attn,
-                master_rate=self.master_rate
+                master_rate=master_rate,
+                spherical_harmonics=self.spherical_harmonics,
+                radial_embedding=self.radial_embedding,
             )
-            self.hmp_layers.append(hmp_layer)
+            self.hmp_layers.append(layer)
 
+        self.emb_in = nn.Embedding(in_dim, emb_dim)
         self.pool = global_add_pool
-        self.pred = torch.nn.Sequential(
-            torch.nn.Linear(emb_dim, emb_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(emb_dim, out_dim)
+        self.pred = nn.Sequential(
+            nn.Linear(emb_dim, emb_dim),
+            nn.ReLU(),
+            nn.Linear(emb_dim, out_dim),
         )
 
-    def update_tau(self, epoch, n_epochs):
-        """Update the Gumbel-Softmax temperature `tau` for all HMP layers."""
+    def update_tau(self, epoch: int, n_epochs: int) -> None:
+        """Update the Gumbel-Softmax temperature for all HMP layers."""
         initial_tau = 1.0
         final_tau = 0.1
         anneal_epochs = n_epochs // 2
@@ -140,19 +194,18 @@ class HMP_TFNModel(torch.nn.Module):
             layer.master_selection.tau.fill_(tau)
 
     def forward(self, batch):
-        h_scalar = self.emb_in(batch.atoms)
-        h_vector = torch.zeros(h_scalar.size(0), 1, 3, device=h_scalar.device)
-        h = (h_scalar, h_vector)
+        h = self.emb_in(batch.atoms)
         pos = batch.pos
 
         virtual_adjs = []
         masks = []
 
         for layer in self.hmp_layers:
-            h, pos, A_virtual, m = layer(h, pos, batch.edge_index, batch.batch)
+            h, pos, A_virtual, m = layer(h, pos, batch.edge_index)
             virtual_adjs.append(A_virtual)
             masks.append(m)
 
-        pooled_h = self.pool(h[0], batch.batch)
+        pooled_h = self.pool(h[:, :self.emb_dim], batch.batch)
         prediction = self.pred(pooled_h)
         return prediction
+

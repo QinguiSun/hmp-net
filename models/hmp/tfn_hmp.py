@@ -3,6 +3,8 @@ from torch import nn
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
 import e3nn
+from typing import Optional
+
 
 from models.mace_modules.blocks import RadialEmbeddingBlock
 from models.layers.tfn_layer import TensorProductConvLayer
@@ -99,7 +101,8 @@ class HMP_TFNModel(nn.Module):
         max_ell: int = 2,
         num_layers: int = 5,
         emb_dim: int = 128,
-        hidden_irreps: e3nn.o3.Irreps | None = None,
+        #hidden_irreps: e3nn.o3.Irreps | None = None,
+        hidden_irreps: Optional[e3nn.o3.Irreps] = None,
         mlp_dim: int = 256,
         in_dim: int = 1,
         out_dim: int = 1,

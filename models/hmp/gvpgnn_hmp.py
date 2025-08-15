@@ -15,14 +15,40 @@ class HMPLayer(nn.Module):
     def __init__(self, backbone_layer, h_dim, s_dim, master_selection_hidden_dim, lambda_attn, master_rate):
         super().__init__()
         self.backbone_layer = backbone_layer
-        self.s_dim = s_dim
+        # ``h_dim`` stores the scalar and vector dimensionalities expected by the
+        # underlying GVP layer.  We keep them around so that we can construct edge
+        # attributes with matching sizes on the fly during the forward pass.
+        self.s_dim = h_dim[0]
+        self.v_dim = h_dim[1]
         self.master_selection = MasterSelection(in_dim=s_dim, hidden_dim=master_selection_hidden_dim, ratio=master_rate)
         self.virtual_generation = VirtualGeneration(in_dim=s_dim, lambda_attn=lambda_attn)
+
+    def _edge_features(self, pos, edge_index):
+        """Create scalar and vector edge features from node positions.
+
+        The original implementation passed the raw node positions directly to
+        ``GVPConvLayer`` as ``edge_attr``.  ``GVPConvLayer`` expects a tuple of
+        scalar and vector edge features of shape ``(n_edges, s_dim)`` and
+        ``(n_edges, v_dim, 3)`` respectively.  Supplying only the positions causes
+        the tuple unpacking inside ``tuple_cat`` to misinterpret the tensor,
+        ultimately leading to mismatched tensor sizes during concatenation.  Here
+        we derive simple geometric features – edge lengths and normalised
+        directions – and broadcast them to the required dimensions.
+        """
+
+        vectors = pos[edge_index[0]] - pos[edge_index[1]]
+        lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)
+        directions = torch.nan_to_num(vectors / lengths)
+
+        s = lengths.repeat(1, self.s_dim)
+        v = directions.unsqueeze(1).repeat(1, self.v_dim, 1)
+        return s, v
 
     def forward(self, h, pos, edge_index, batch):
         # 1. Local Propagation
         num_nodes = h[0].size(0)
-        h_update = self.backbone_layer(h, edge_index, pos)
+        edge_attr = self._edge_features(pos, edge_index)
+        h_update = self.backbone_layer(h, edge_index, edge_attr)
         h_local = (h[0] + h_update[0], h[1] + h_update[1]) # Residual connection for features
         pos_local = pos
 
@@ -53,9 +79,10 @@ class HMPLayer(nn.Module):
         # 3. Hierarchical Propagation
         edge_index_virtual, _ = dense_to_sparse(A_virtual)
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
+        edge_attr_master = self._edge_features(pos_master, edge_index_master)
 
         h_master_update = self.backbone_layer(
-            h_master, edge_index_master, pos_master
+            h_master, edge_index_master, edge_attr_master
         )
         h_hierarchical = (h_master[0] + h_master_update[0], h_master[1] + h_master_update[1])
         pos_hierarchical = pos_master

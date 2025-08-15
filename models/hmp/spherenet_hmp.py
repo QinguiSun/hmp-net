@@ -171,7 +171,7 @@ class HMP_SphereNetModel(torch.nn.Module):
         emb = self.emb(dist, angle, torsion, idx_kj)
 
         e = self.init_e(z, emb, i, j)
-        v = self.init_v(e, i)
+        v = self.init_v(e, i, dim_size=num_nodes)
         
         virtual_adjs = []
         masks = []
@@ -183,7 +183,7 @@ class HMP_SphereNetModel(torch.nn.Module):
             spherenet_layer = hmp_layer.backbone_layer
 
             # 1. Local Propagation
-            e_local, v_update_local = spherenet_layer(e, v, i, emb, idx_kj, idx_ji)
+            e_local, v_update_local = spherenet_layer(e, v, i, emb, idx_kj, idx_ji, dim_size=num_nodes)
             v_local = v + v_update_local
 
             # 2. Invariant Topology Learning (Master Node Selection)
@@ -248,11 +248,8 @@ class HMP_SphereNetModel(torch.nn.Module):
             v_master = v_local[master_nodes_mask]
 
             # Hierarchical update
-            e_hier, v_update_hier = spherenet_layer(e_master, v_master, i_master, emb_master, idx_kj_master, idx_ji_master)
-            if v_update_hier.size(0) > 0:
-                v_hier = v_master + v_update_hier
-            else:
-                v_hier = v_master
+            e_hier, v_update_hier = spherenet_layer(e_master, v_master, i_master, emb_master, idx_kj_master, idx_ji_master, dim_size=num_master_nodes)
+            v_hier = v_master + v_update_hier
 
             # 4. Feature Aggregation
             v_hier_expanded = torch.zeros_like(v_local)

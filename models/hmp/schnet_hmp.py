@@ -1,6 +1,5 @@
 import torch
 from torch import nn
-from torch_geometric.nn import no
 from torch_geometric.nn.models.schnet import InteractionBlock
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool

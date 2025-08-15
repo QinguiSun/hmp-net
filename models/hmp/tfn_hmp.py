@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
 import e3nn
@@ -45,7 +46,7 @@ class HMPLayer(nn.Module):
         edge_feats = self.radial_embedding(lengths)
 
         h_update = self.conv(h, edge_index, edge_sh, edge_feats)
-        h_local = h + h_update
+        h_local = h_update + F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))
 
         # Invariant topology learning
         h_scalar = h_local[:, :self.s_dim]
@@ -78,8 +79,13 @@ class HMPLayer(nn.Module):
         edge_sh_master = self.spherical_harmonics(vectors_master)
         edge_feats_master = self.radial_embedding(lengths_master)
 
-        h_master_update = self.conv(h_master, edge_index_master, edge_sh_master, edge_feats_master)
-        h_hierarchical = h_master + h_master_update
+        # Hierarchical update
+        if self.conv.in_irreps == self.conv.out_irreps:
+            h_master_update = self.conv(h_master, edge_index_master, edge_sh_master, edge_feats_master)
+            h_hierarchical = h_master + h_master_update
+        else:
+            # First layer: skip hierarchical update
+            h_hierarchical = h_master
 
         h_hierarchical_expanded = torch.zeros_like(h_local)
         h_hierarchical_expanded[master_nodes_mask] = h_hierarchical

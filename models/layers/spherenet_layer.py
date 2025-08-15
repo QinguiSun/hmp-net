@@ -18,7 +18,7 @@ import numpy as np
 from scipy.optimize import brentq
 from scipy import special as sp
 import torch
-from math import pi as PI
+from math import pi as PI, factorial
 
 import sympy as sym
 
@@ -216,9 +216,9 @@ class update_v(torch.nn.Module):
         if self.output_init == 'GlorotOrthogonal':
             glorot_orthogonal(self.lin.weight, scale=2.0)
 
-    def forward(self, e, i):
+    def forward(self, e, i, dim_size=None):
         _, e2 = e
-        v = scatter(e2, i, dim=0)
+        v = scatter(e2, i, dim=0, dim_size=dim_size)
         v = self.lin_up(v)
         for lin in self.lins:
             v = self.act(lin(v))
@@ -294,8 +294,8 @@ def bessel_basis(n, k):
 
 
 def sph_harm_prefactor(k, m):
-    return ((2 * k + 1) * np.math.factorial(k - abs(m)) /
-            (4 * np.pi * np.math.factorial(k + abs(m))))**0.5
+    return ((2 * k + 1) * factorial(k - abs(m)) /
+            (4 * np.pi * factorial(k + abs(m))))**0.5
 
 
 def associated_legendre_polynomials(k, zero_m_only=True):
@@ -578,7 +578,7 @@ class SphereNetLayer(nn.Module):
         self.update_v = update_v(hidden_channels, out_emb_channels, out_channels,
                                  num_output_layers, act, output_init)
 
-    def forward(self, e, v, i, emb, idx_kj, idx_ji):
+    def forward(self, e, v, i, emb, idx_kj, idx_ji, dim_size=None):
         """
         Forward pass for the SphereNet layer.
         Note: This signature is not directly compatible with the HMPLayer,
@@ -586,7 +586,7 @@ class SphereNetLayer(nn.Module):
         The discrepancy is handled in the HMP_SphereNetModel.
         """
         e = self.update_e(e, emb, idx_kj, idx_ji)
-        v_update = self.update_v(e, i)
+        v_update = self.update_v(e, i, dim_size=v.size(0) if dim_size is None else dim_size)
         
         # 安全打印：既能打印张量的 shape，也能打印 tuple 里各元素的 shape
         def _shape(x):

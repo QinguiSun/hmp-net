@@ -36,6 +36,17 @@ def tuple_cat(*args, dim=-1):
     """
     dim %= len(args[0][0].shape)
     s_args, v_args = list(zip(*args))
+    
+    def safe_shape(x):
+        try:
+            return tuple(x.shape)
+        except Exception:
+            if isinstance(x, (list, tuple)):
+                return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+            return type(x).__name__
+
+    print("s_args:", safe_shape(s_args))
+    print("v_args:", safe_shape(v_args))
     return torch.cat(s_args, dim=dim), torch.cat(v_args, dim=dim)
 
 

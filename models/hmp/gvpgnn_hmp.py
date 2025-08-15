@@ -95,7 +95,16 @@ class HMP_GVPGNNModel(torch.nn.Module):
         self.v_dim = v_dim
 
         self.emb_in_s = torch.nn.Embedding(in_dim, s_dim)
-        self.emb_in_v = torch.nn.Embedding(in_dim, v_dim)
+        # Each vector feature consists of 3 components.  The original
+        # implementation only allocated ``v_dim`` channels which results in a
+        # tensor of shape ``(n_nodes, 1, v_dim)`` after an ``unsqueeze`` in the
+        # forward pass.  Downstream ``GVPConv`` layers expect the vector features
+        # in the canonical ``(n_nodes, v_dim, 3)`` layout.  The mismatch caused a
+        # runtime error when the tensor was reshaped inside the convolution
+        # because the last dimension was ``v_dim`` instead of ``3``.  We allocate
+        # ``v_dim * 3`` embedding dimensions here so that the tensor can be
+        # properly viewed into ``(n_nodes, v_dim, 3)``.
+        self.emb_in_v = torch.nn.Embedding(in_dim, v_dim * 3)
 
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
@@ -133,7 +142,9 @@ class HMP_GVPGNNModel(torch.nn.Module):
 
     def forward(self, batch):
         h_scalar = self.emb_in_s(batch.atoms)
-        h_vector = self.emb_in_v(batch.atoms).unsqueeze(-2)
+        # Reshape the embedding output into ``(n_nodes, v_dim, 3)`` so that it is
+        # compatible with the expectations of ``GVPConv`` layers.
+        h_vector = self.emb_in_v(batch.atoms).view(-1, self.v_dim, 3)
         h = (h_scalar, h_vector)
         pos = batch.pos
 

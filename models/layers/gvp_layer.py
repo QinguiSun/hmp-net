@@ -45,8 +45,8 @@ def tuple_cat(*args, dim=-1):
                 return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
             return type(x).__name__
 
-    print("s_args:", safe_shape(s_args))
-    print("v_args:", safe_shape(v_args))
+    #print("s_args:", safe_shape(s_args))
+    #print("v_args:", safe_shape(v_args))
     return torch.cat(s_args, dim=dim), torch.cat(v_args, dim=dim)
 
 

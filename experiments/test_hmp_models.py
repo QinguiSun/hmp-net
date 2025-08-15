@@ -43,14 +43,9 @@ def train_hmp(model, train_loader, optimizer, device, lambda_struct, lambda_rate
         batch = batch.to(device)
         optimizer.zero_grad()
         
-        out_dict = model(batch)
-        y_pred = out_dict['pred']
+        y_pred = model(batch)
         
-        task_loss = F.cross_entropy(y_pred, batch.y)
-        struct_loss = out_dict['l_struct']
-        rate_loss = out_dict['l_rate']
-        
-        loss = task_loss + lambda_struct * struct_loss + lambda_rate * rate_loss
+        loss = F.cross_entropy(y_pred, batch.y)
         
         loss.backward()
         loss_all += loss.item() * batch.num_graphs
@@ -64,7 +59,7 @@ def eval_hmp(model, loader, device):
     for batch in loader:
         batch = batch.to(device)
         with torch.no_grad():
-            y_pred.append(model(batch)['pred'].detach().cpu())
+            y_pred.append(model(batch).detach().cpu())
             y_true.append(batch.y.detach().cpu())
     return accuracy_score(torch.cat(y_true, dim=0), np.argmax(torch.cat(y_pred, dim=0), axis=1)) * 100
 
@@ -115,7 +110,7 @@ if __name__ == '__main__':
     run_test_experiment(hmp_spherenet, train_loader, val_loader, test_loader, n_epochs, device)
 
     # Test HMP-EGNN
-    hmp_egnn = HMP_EGNNModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2, s_dim=16)
+    hmp_egnn = HMP_EGNNModel(num_layers=3, emb_dim=64, in_dim=1, out_dim=2)
     run_test_experiment(hmp_egnn, train_loader, val_loader, test_loader, n_epochs, device)
 
     # Test HMP-GVPGNN

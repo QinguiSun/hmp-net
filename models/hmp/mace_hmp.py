@@ -88,6 +88,7 @@ class HMP_MACEModel(MACEModel):
     def __init__(self, master_rate=0.25, s_dim_scale=1, **kwargs):
         super().__init__(**kwargs)
         self.master_rate = master_rate
+        aggr = kwargs.get("aggr", "sum")
         
         # s_dim is the scalar feature dimension, which is emb_dim for MACE
         s_dim = self.emb_dim * s_dim_scale
@@ -100,7 +101,7 @@ class HMP_MACEModel(MACEModel):
             sh_irreps=self.spherical_harmonics.irreps_out,
             edge_feats_dim=self.radial_embedding.out_dim,
             mlp_dim=self.mlp_dim,
-            aggr=self.aggr,
+            aggr=aggr,
             batch_norm=self.batch_norm,
             gate=False,
         )

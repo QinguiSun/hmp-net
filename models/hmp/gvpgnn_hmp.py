@@ -2,8 +2,9 @@ import torch
 from torch import nn
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
+from torch.nn import functional as F
 
-from models.layers.gvp_layer import GVPLayer
+from models.layers.gvp_layer import GVPConvLayer
 from models.hmp.master_selection import MasterSelection
 from models.hmp.virtual_generation import VirtualGeneration
 
@@ -98,7 +99,7 @@ class HMP_GVPGNNModel(torch.nn.Module):
 
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
-            gvp_layer = GVPLayer((s_dim, v_dim), (s_dim, v_dim), activation="relu", norm="layer", vector_gate=True)
+            gvp_layer = GVPConvLayer((s_dim, v_dim), (s_dim, v_dim), activation=(F.relu, None), residual=True, vector_gate=True)
             hmp_layer = HMPLayer(
                 backbone_layer=gvp_layer,
                 h_dim=(s_dim, v_dim),

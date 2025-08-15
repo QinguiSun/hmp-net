@@ -69,8 +69,6 @@ class EGNNLayer(MessagePassing):
         pos_diff = pos_diff * self.mlp_pos(msg)
         # NOTE: some papers divide pos_diff by (dists + 1) to stabilise model.
         # NOTE: lucidrains clamps pos_diff between some [-n, +n], also for stability.
-        print(f"shape of msg: {msg.shape}")
-        print(f"shape of pos_diff: {pos_diff.shape}")
         return msg, pos_diff
 
     def aggregate(self, inputs, index, ptr=None, dim_size=None):
@@ -91,15 +89,10 @@ class EGNNLayer(MessagePassing):
             reduce="mean",
             dim_size=dim_size,
         )
-        print(f"shape of msg_aggr: {msg_aggr.shape}")
-        print(f"shape of pos_aggr: {pos_aggr.shape}")
         return msg_aggr, pos_aggr
 
     def update(self, aggr_out, h, pos):
         msg_aggr, pos_aggr = aggr_out
-        print(f"shape of the h: {h.shape}")
-        print(f"shape of the msg_aggr: {msg_aggr.shape}")
-        print("/////////////////////////////////////////////")
         upd_out = self.mlp_upd(torch.cat([h, msg_aggr], dim=-1))
         upd_pos = pos + pos_aggr
         return upd_out, upd_pos

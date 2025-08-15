@@ -99,7 +99,7 @@ class HMP_GVPGNNModel(torch.nn.Module):
 
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
-            gvp_layer = GVPConvLayer((s_dim, v_dim), (s_dim, v_dim), activation=(F.relu, None), residual=True, vector_gate=True)
+            gvp_layer = GVPConvLayer((s_dim, v_dim), (s_dim, v_dim), activations=(F.relu, None), residual=True, vector_gate=True)
             hmp_layer = HMPLayer(
                 backbone_layer=gvp_layer,
                 h_dim=(s_dim, v_dim),

@@ -82,7 +82,7 @@ class HMPLayer(nn.Module):
         # Hierarchical update
         if self.conv.in_irreps == self.conv.out_irreps:
             h_master_update = self.conv(h_master, edge_index_master, edge_sh_master, edge_feats_master)
-            h_hierarchical = h_master + h_master_update
+            h_hierarchical = h_master_update + F.pad(h_master, (0, h_master_update.shape[-1] - h_master.shape[-1]))
         else:
             # First layer: skip hierarchical update
             h_hierarchical = h_master

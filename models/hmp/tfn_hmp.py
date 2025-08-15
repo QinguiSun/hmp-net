@@ -48,6 +48,7 @@ class HMPLayer(nn.Module):
         h_update = self.conv(h, edge_index, edge_sh, edge_feats)
         h_local = h_update + F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))
 
+
         # Invariant topology learning
         h_scalar = h_local[:, :self.s_dim]
         m, _ = self.master_selection(h_scalar)

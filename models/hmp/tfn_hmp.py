@@ -3,7 +3,7 @@ from torch import nn
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
 
-from models.layers.tfn_layer import TFNLayer
+from models.layers.tfn_layer import TensorProductConvLayer
 from models.hmp.master_selection import MasterSelection
 from models.hmp.virtual_generation import VirtualGeneration
 
@@ -96,6 +96,18 @@ class HMP_TFNModel(torch.nn.Module):
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):
             tfn_layer = TFNLayer(emb_dim, emb_dim, activation="relu", norm="layer", aggr="sum")
+            
+            TensorProductConvLayer(
+                in_irreps=e3nn.o3.Irreps(f'{emb_dim}x0e'),
+                out_irreps=hidden_irreps,
+                sh_irreps=sh_irreps,
+                edge_feats_dim=self.radial_embedding.out_dim,
+                mlp_dim=mlp_dim,
+                aggr=aggr,
+                batch_norm=batch_norm,
+                gate=gate,
+            )
+                        
             hmp_layer = HMPLayer(
                 backbone_layer=tfn_layer,
                 h_dim=emb_dim,

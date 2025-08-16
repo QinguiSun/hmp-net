@@ -89,7 +89,40 @@ class HMP_MACEModel(MACEModel):
         super().__init__(**kwargs)
         self.master_rate = master_rate
         aggr = kwargs.get("aggr", "sum")
-        
+
+        # ------------------------------------------------------------------
+        # Override backbone with TensorProductConvLayer
+        # First layer: scalar only -> tensor
+        sh_irreps = self.spherical_harmonics.irreps_out
+        self.convs = torch.nn.ModuleList()
+        self.convs.append(
+            TensorProductConvLayer(
+                in_irreps=e3nn.o3.Irreps(f"{self.emb_dim}x0e"),
+                out_irreps=self.hidden_irreps,
+                sh_irreps=sh_irreps,
+                edge_feats_dim=self.radial_embedding.out_dim,
+                mlp_dim=self.mlp_dim,
+                aggr=aggr,
+                batch_norm=self.batch_norm,
+                gate=False,
+            )
+        )
+
+        # Intermediate layers: tensor -> tensor
+        for _ in range(self.num_layers - 1):
+            self.convs.append(
+                TensorProductConvLayer(
+                    in_irreps=self.hidden_irreps,
+                    out_irreps=self.hidden_irreps,
+                    sh_irreps=sh_irreps,
+                    edge_feats_dim=self.radial_embedding.out_dim,
+                    mlp_dim=self.mlp_dim,
+                    aggr=aggr,
+                    batch_norm=self.batch_norm,
+                    gate=False,
+                )
+            )
+
         # s_dim is the scalar feature dimension, which is emb_dim for MACE
         s_dim = self.emb_dim * s_dim_scale
 
@@ -116,11 +149,11 @@ class HMP_MACEModel(MACEModel):
                 spherical_harmonics=self.spherical_harmonics,
                 radial_embedding=self.radial_embedding,
                 s_dim=s_dim,
-                master_selection_hidden_dim=s_dim, # A reasonable default
-                lambda_attn=0.1 # A reasonable default
+                master_selection_hidden_dim=s_dim,  # A reasonable default
+                lambda_attn=0.1  # A reasonable default
             )
             self.hmp_layers.append(hmp_layer)
-        
+
         # Remove original layers to avoid confusion and duplicate parameters
         del self.convs
         del self.prods
@@ -138,21 +171,6 @@ class HMP_MACEModel(MACEModel):
         virtual_adjs = []
         masks = []
 
-        def safe_shape(x):
-            try:
-                return tuple(x.shape)
-            except Exception:
-                if isinstance(x, (list, tuple)):
-                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
-                return type(x).__name__
-
-        print("h:", safe_shape(h))
-        print("pos:", safe_shape(pos))
-        print("batch.edge_index:", safe_shape(batch.edge_index))
-        print("edge_sh:", safe_shape(edge_sh))
-        print("edge_feats:", safe_shape(edge_feats))
-        print("batch.batch:", safe_shape(batch.batch))
-            
         for layer in self.hmp_layers:
             h, A_virtual, m = layer(h, pos, batch.edge_index, edge_sh, edge_feats, batch.batch)
             virtual_adjs.append(A_virtual)

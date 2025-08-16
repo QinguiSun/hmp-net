@@ -138,6 +138,21 @@ class HMP_MACEModel(MACEModel):
         virtual_adjs = []
         masks = []
 
+        def safe_shape(x):
+            try:
+                return tuple(x.shape)
+            except Exception:
+                if isinstance(x, (list, tuple)):
+                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                return type(x).__name__
+
+        print("h:", safe_shape(h))
+        print("pos:", safe_shape(pos))
+        print("batch.edge_index:", safe_shape(batch.edge_index))
+        print("edge_sh:", safe_shape(edge_sh))
+        print("edge_feats:", safe_shape(edge_feats))
+        print("batch.batch:", safe_shape(batch.batch))
+            
         for layer in self.hmp_layers:
             h, A_virtual, m = layer(h, pos, batch.edge_index, edge_sh, edge_feats, batch.batch)
             virtual_adjs.append(A_virtual)

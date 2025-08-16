@@ -120,16 +120,16 @@ class HMP_MACEModel(MACEModel):
         sh_irreps = self.spherical_harmonics.irreps_out
         self.convs = torch.nn.ModuleList()
         self.convs.append(
-            TensorProductConvLayer(
-                in_irreps=e3nn.o3.Irreps(f"{self.emb_dim}x0e"),
-                out_irreps=self.hidden_irreps,
-                sh_irreps=sh_irreps,
-                edge_feats_dim=self.radial_embedding.out_dim,
-                mlp_dim=self.mlp_dim,
-                aggr=aggr,
-                batch_norm=self.batch_norm,
-                gate=False,
-            )
+                TensorProductConvLayer(
+                    in_irreps=e3nn.o3.Irreps(f"{self.emb_dim}x0e"),
+                    out_irreps=self.hidden_irreps,
+                    sh_irreps=sh_irreps,
+                    edge_feats_dim=self.radial_embedding.out_dim,
+                    mlp_dim=self.mlp_dim,
+                    aggr=aggr,
+                    batch_norm=self.batch_norm,
+                    gate=False,
+                )
         )
 
         # Intermediate layers: tensor -> tensor

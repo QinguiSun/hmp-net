@@ -30,6 +30,19 @@ class HMP_MACELayer(nn.Module):
 
     def forward(self, h, pos, edge_index, edge_sh, edge_feats, batch):
         # 1. Local Propagation
+        def safe_shape(x):
+            try:
+                return tuple(x.shape)
+            except Exception:
+                if isinstance(x, (list, tuple)):
+                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                return type(x).__name__
+
+        print("h:", safe_shape(h))
+        print("edge_index:", safe_shape(edge_index))
+        print("edge_sh:", safe_shape(edge_sh))
+        print("edge_feats:", safe_shape(edge_feats))
+            
         h_update = self.local_conv(h, edge_index, edge_sh, edge_feats)
         sc = F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))
         h_local = self.prod(self.reshape(h_update), sc, None)

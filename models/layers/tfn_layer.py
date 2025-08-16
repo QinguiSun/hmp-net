@@ -89,5 +89,14 @@ class TensorProductConvLayer(torch.nn.Module):
         if self.gate:
             out = self.gate(out)
         if self.batch_norm:
+            def safe_shape(x):
+                try:
+                    return tuple(x.shape)
+                except Exception:
+                    if isinstance(x, (list, tuple)):
+                        return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                    return type(x).__name__
+
+            print("out:", safe_shape(out))
             out = self.batch_norm(out)
         return out

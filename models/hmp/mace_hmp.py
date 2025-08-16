@@ -99,7 +99,18 @@ class HMP_MACEModel(MACEModel):
     HMP-enhanced MACE model.
     """
     def __init__(self, master_rate=0.25, s_dim_scale=1, **kwargs):
+        # call MACEModel constructor
         super().__init__(**kwargs)
+
+        # ------------------------------------------------------------------
+        # Ensure hidden_irreps is computed.  If hidden_irreps=None or has zero
+        # dimension (no valid tensor‑product instructions) recompute it from
+        # the spherical harmonics irreps and the embedding dimension.
+        if getattr(self, "hidden_irreps", None) is None or self.hidden_irreps.dim == 0:
+            sh_irreps = e3nn.o3.Irreps.spherical_harmonics(self.max_ell)
+            # replicate each irrep emb_dim times and simplify
+            self.hidden_irreps = (sh_irreps * self.emb_dim).sort()[0].simplify()
+
         self.master_rate = master_rate
         aggr = kwargs.get("aggr", "sum")
 
@@ -136,8 +147,14 @@ class HMP_MACEModel(MACEModel):
                 )
             )
 
-        # s_dim is the scalar feature dimension, which is emb_dim for MACE
-        s_dim = self.emb_dim * s_dim_scale
+        # s_dim is the number of 0e irreps in the hidden representation
+        # (only scalars drive master-node selection).  Compute it directly
+        # from hidden_irreps.
+        s_dim = 0
+        for mul, ir in self.hidden_irreps:
+            if ir.l == 0 and ir.p == 1:
+                s_dim += mul
+        s_dim *= s_dim_scale
 
         # Create a single tensor-to-tensor convolution layer for hierarchical propagation
         # This will be shared across all HMP layers for the hierarchical step

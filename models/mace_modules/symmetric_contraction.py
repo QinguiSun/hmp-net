@@ -99,8 +99,8 @@ class Contraction(torch.nn.Module):
         super().__init__()
 
         self.element_dependent = element_dependent
-        #self.num_features = irreps_in.count((0, 1))
-        self.num_features = sum(mul for mul, _ in irreps_in)
+        self.num_features = irreps_in.count((0, 1))
+        #self.num_features = sum(mul for mul, _ in irreps_in)
         self.coupling_irreps = o3.Irreps([irrep.ir for irrep in irreps_in])
         self.correlation = correlation
         dtype = torch.get_default_dtype()

@@ -110,6 +110,7 @@ class MACEModel(torch.nn.Module):
                 gate=False,
             )
         )
+
         self.reshapes.append(reshape_irreps(hidden_irreps))
         self.prods.append(
             EquivariantProductBasisBlock(
@@ -167,6 +168,9 @@ class MACEModel(torch.nn.Module):
         h = self.emb_in(batch.atoms)  # (n,) -> (n, d)
 
         # Edge features
+        #print("------------->>>>>>>>>>>>>---------------")
+        #print("batch.edge_index:\n", batch.edge_index[:,:])
+        #print("-------------<<<<<<<<<<<<<---------------")
         vectors = batch.pos[batch.edge_index[0]] - batch.pos[batch.edge_index[1]]  # [n_edges, 3]
         lengths = torch.linalg.norm(vectors, dim=-1, keepdim=True)  # [n_edges, 1]
 
@@ -178,8 +182,9 @@ class MACEModel(torch.nn.Module):
             h_update = conv(h, batch.edge_index, edge_sh, edge_feats)
             
             # Update node features
-            sc = F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))
-            h = prod(reshape(h_update), sc, None)
+            sc = F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))   # skip connection（残差分支）
+            h = prod(reshape(h_update), sc, None)       # 新特征 (h_update) + 残差 (sc) → 通过 equivariant product → 下一层输入 (h)
+                                                        # reshape(h_update)：主分支的新特征（已整理成 irreps 的张量结构）
 
         out = self.pool(h, batch.batch)  # (n, d) -> (batch_size, d)
         

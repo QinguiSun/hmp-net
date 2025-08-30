@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 from torch_geometric.utils import to_dense_adj, dense_to_sparse, subgraph
 from torch_geometric.nn import global_add_pool
+from torch_geometric.utils import remove_self_loops, to_undirected
 import e3nn
 from typing import Optional
 
@@ -72,8 +73,34 @@ class HMPLayer(nn.Module):
 
         # Virtual edge generation
         A_virtual = self.virtual_generation(h_master_scalar, adj_induced)
-        edge_index_virtual, _ = dense_to_sparse(A_virtual)
+        edge_reindex_virtual, _ = dense_to_sparse(A_virtual)
+        edge_index_virtual, _ = remove_self_loops(edge_reindex_virtual)    # 可选："再次"确保无自环
+        edge_index_virtual = to_undirected(edge_index_virtual, num_nodes=h_master.size(0))
+        
+        master_indices = master_indices.to(device=edge_reindex_virtual.device, dtype=torch.long)
+        edge_index_virtual_global = master_indices[edge_reindex_virtual]  # 仅用于全局用途
+        
         edge_index_master = torch.cat([edge_index_induced, edge_index_virtual], dim=1)
+        
+        # 越界断言（避免空边时报 .max() 错）
+        if edge_index_master.numel() > 0:
+            assert edge_index_master.max() < h_master.size(0), \
+                f"master edge index {edge_index_master.max().item()} >= num master {h_master.size(0)}"
+        
+        # edge_index_master: [2, E]（master-local 索引空间）
+        M = h_master.size(0)
+        E = edge_index_master.size(1) if edge_index_master.numel() > 0 else 0
+        
+        # 版本 A：至少有一条边（若 M>=2 则要求 E>=1）
+        assert (M <= 1) or (E >= 1), \
+            f"No edges among master nodes: num_master={M}, num_edges={E}"
+            
+        # 版本 B：每个 master 节点至少有一条相连的边（无孤立点）
+        # deg[k] 是第 k 个 master 节点的度
+        deg = torch.bincount(edge_index_master.reshape(-1), minlength=M)
+        isolated = (deg == 0).nonzero(as_tuple=False).view(-1)
+        assert (M == 0) or (M == 1 and E == 0) or isolated.numel() == 0, \
+            f"Isolated master nodes found (no incident edges): {isolated.tolist()} | num_master={M}, num_edges={E}"
 
         vectors_master = pos_master[edge_index_master[0]] - pos_master[edge_index_master[1]]
         lengths_master = torch.linalg.norm(vectors_master, dim=-1, keepdim=True)

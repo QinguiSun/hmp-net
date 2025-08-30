@@ -126,8 +126,19 @@ class EquivariantProductBasisBlock(torch.nn.Module):
     def forward(
         self, node_feats: torch.Tensor, sc: Optional[torch.Tensor], node_attrs: Optional[torch.Tensor]
     ) -> torch.Tensor:
+        def _shape(x):
+            try:
+                return tuple(x.shape)
+            except AttributeError:
+                return type(x).__name__
+
+        #print(f"the shape of `node_feats`: {_shape(node_feats)}")
+        #print(f"the shape of `node_attrs`: {_shape(node_attrs)}")
         node_feats = self.symmetric_contractions(node_feats, node_attrs)
+        #print(f"the shape of `node_feats`: {_shape(node_feats)}")
         out = self.linear(node_feats)
+        #print(f"the shape of `out`: {_shape(out)}")
+        #print(f"the shape of `sc`: {_shape(sc)}")
         if self.batch_norm:
             out = self.batch_norm(out)
         if self.use_sc:

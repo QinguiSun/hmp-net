@@ -64,6 +64,8 @@ class VirtualGeneration(nn.Module):
         self.lambda_attn = lambda_attn
         self.proj = nn.Linear(2 * in_dim, 1, bias=False)
         self.leaky_relu = nn.LeakyReLU(negative_slope)
+        
+        self.phi = nn.Linear(in_dim, 2*in_dim, bias=False)  # 共享
 
     def forward(
         self,
@@ -89,8 +91,10 @@ class VirtualGeneration(nn.Module):
         m = s.size(0)
         s_i = s.unsqueeze(1).expand(-1, m, -1)
         s_j = s.unsqueeze(0).expand(m, -1, -1)
+        # 有向的分数 score 
         pair = torch.cat([s_i, s_j], dim=-1)
         scores = self.leaky_relu(self.proj(pair).squeeze(-1))
+                
         if adj_induced is not None:
             scores = scores + self.lambda_attn * adj_induced
         attn = sparsemax(scores, dim=-1)

@@ -80,11 +80,38 @@ class TensorProductConvLayer(torch.nn.Module):
         self.batch_norm = e3nn.nn.BatchNorm(out_irreps) if batch_norm else None
 
     def forward(self, node_attr, edge_index, edge_sh, edge_feat):
+        def safe_shape(x):
+            try:
+                return tuple(x.shape)
+            except Exception:
+                if isinstance(x, (list, tuple)):
+                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                return type(x).__name__
         src, dst = edge_index
+        #print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        #print("edge_index:\n", edge_index)
+                    
+        #print("node_attr:", safe_shape(node_attr))
+        #print("node_attr:\n", node_attr)
+        #print("node_attr[dst]:", safe_shape(node_attr[dst]))
+        #print("node_attr[dst]:\n", node_attr[dst])
+        #print("edge_sh:", safe_shape(edge_sh))
+        #print("edge_sh:\n", edge_sh)
+        #print("edge_feat:", safe_shape(edge_feat))
+        #print("edge_feat:\n", edge_feat)
+        #print("self.fc(edge_feat):", safe_shape(self.fc(edge_feat)))
+        #print("self.fc(edge_feat):\n", self.fc(edge_feat))
         # Compute messages
         tp = self.tp(node_attr[dst], edge_sh, self.fc(edge_feat))
+        #print("tp:", safe_shape(tp))
+        #print("tp:\n", tp)
         # Aggregate messages
+        #print("src:\n", src)
         out = scatter(tp, src, dim=0, reduce=self.aggr)
+        #print("out:", safe_shape(out))
+        #print("out:\n", out)
+    
+        #print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
         # Optionally apply gated non-linearity and/or batch norm
         if self.gate:
             out = self.gate(out)
@@ -97,6 +124,5 @@ class TensorProductConvLayer(torch.nn.Module):
                         return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
                     return type(x).__name__
 
-            print("out:", safe_shape(out))
             out = self.batch_norm(out)
         return out

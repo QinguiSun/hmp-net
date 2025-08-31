@@ -249,6 +249,17 @@ class HMP_MACEModel(MACEModel):
         del self.prods
         del self.reshapes
 
+    def update_tau(self, epoch, n_epochs):
+        initial_tau = 1.0
+        final_tau = 0.1
+        anneal_epochs = n_epochs // 2
+        if epoch <= anneal_epochs:
+            tau = initial_tau - (initial_tau - final_tau) * (epoch / anneal_epochs)
+        else:
+            tau = final_tau
+        for layer in self.hmp_layers:
+            layer.master_selection.tau.fill_(tau)
+
     def forward(self, batch):
         h = self.emb_in(batch.atoms)
         pos = batch.pos

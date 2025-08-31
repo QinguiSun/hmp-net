@@ -132,6 +132,11 @@ class TFNModel(torch.nn.Module):
                 torch.nn.ReLU(),
                 torch.nn.Linear(emb_dim, out_dim)
             )
+        """
+        if hidden_irreps is None:
+            hidden_irreps = (sh_irreps * emb_dim).sort()[0].simplify()
+        self.hidden_irreps = hidden_irreps# 记录最终 irreps
+        """
     
     def forward(self, batch):
         # Node embedding
@@ -143,6 +148,8 @@ class TFNModel(torch.nn.Module):
 
         edge_sh = self.spherical_harmonics(vectors)
         edge_feats = self.radial_embedding(lengths)
+        
+        #print(f"self.hidden_irreps: {self.hidden_irreps}")
         
         for conv in self.convs:
             # Message passing layer

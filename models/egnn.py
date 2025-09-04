@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 from torch_geometric.nn import global_add_pool, global_mean_pool
+#from torch_geometric.utils import remove_self_loops, add_self_loops, subgraph
 
 from models.layers.egnn_layer import EGNNLayer
 
@@ -12,7 +13,7 @@ class EGNNModel(torch.nn.Module):
     def __init__(
         self,
         num_layers: int = 5,
-        emb_dim: int = 128,
+        emb_dim: int = 128,     # hidden_dim
         in_dim: int = 1,
         out_dim: int = 1,
         activation: str = "relu",
@@ -64,13 +65,14 @@ class EGNNModel(torch.nn.Module):
             )
 
     def forward(self, batch):
-        
         h = self.emb_in(batch.atoms)  # (n,) -> (n, d)
         pos = batch.pos  # (n, 3)
+        N = h.size(0)
+        edge_index = batch.edge_index
 
         for conv in self.convs:
             # Message passing layer
-            h_update, pos_update = conv(h, pos, batch.edge_index)
+            h_update, pos_update = conv(h, pos, edge_index)
 
             # Update node features (n, d) -> (n, d)
             h = h + h_update if self.residual else h_update 

@@ -1,10 +1,37 @@
-from typing import Callable, Union
+from typing import Callable, Tuple, Union
 
 import torch
 from torch.nn import functional as F
 from torch_geometric.nn import DimeNetPlusPlus
 from torch_scatter import scatter
 
+from torch_geometric.typing import  SparseTensor
+from torch import Tensor
+
+def triplets(
+    edge_index: Tensor,
+    num_nodes: int,
+) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    row, col = edge_index  # j->i
+
+    value = torch.arange(row.size(0), device=row.device)
+    adj_t = SparseTensor(row=col, col=row, value=value,
+                         sparse_sizes=(num_nodes, num_nodes))
+    adj_t_row = adj_t[row]
+    num_triplets = adj_t_row.set_value(None).sum(dim=1).to(torch.long)
+
+    # Node indices (k->j->i) for triplets.
+    idx_i = col.repeat_interleave(num_triplets)
+    idx_j = row.repeat_interleave(num_triplets)
+    idx_k = adj_t_row.storage.col()
+    mask = idx_i != idx_k  # Remove i == k triplets.
+    idx_i, idx_j, idx_k = idx_i[mask], idx_j[mask], idx_k[mask]
+
+    # Edge indices (k-j, j->i) for triplets.
+    idx_kj = adj_t_row.storage.value()[mask]
+    idx_ji = adj_t_row.storage.row()[mask]
+
+    return col, row, idx_i, idx_j, idx_k, idx_kj, idx_ji
 
 class DimeNetPPModel(DimeNetPlusPlus):
     """
@@ -17,9 +44,9 @@ class DimeNetPPModel(DimeNetPlusPlus):
         hidden_channels: int = 128, 
         in_dim: int = 1,
         out_dim: int = 1, 
-        num_layers: int = 4, 
+        num_layers: int = 4,    # num_blocks
         int_emb_size: int = 64, 
-        basis_emb_size: int = 8, 
+        basis_emb_size: int = 8,    # num_bilinear
         out_emb_channels: int = 256, 
         num_spherical: int = 7, 
         num_radial: int = 6, 
@@ -76,7 +103,7 @@ class DimeNetPPModel(DimeNetPlusPlus):
 
     def forward(self, batch):
         
-        i, j, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
+        i, j, idx_i, idx_j, idx_k, idx_kj, idx_ji = triplets(
             batch.edge_index, num_nodes=batch.atoms.size(0))
 
         # Calculate distances.

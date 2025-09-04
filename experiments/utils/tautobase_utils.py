@@ -4,6 +4,51 @@ import torch
 from torch_geometric.data import Dataset, Data
 from glob import glob
 from tqdm import tqdm
+from torch_geometric.utils import coalesce
+
+# 优先使用 PyG 自带的 radius_graph；若不可用则回退到 torch_cluster
+try:
+    # PyG 2.4+ 提供了 torch_geometric.nn.radius_graph
+    from torch_geometric.nn import radius_graph as pyg_radius_graph
+    _HAS_PYG_RADIUS = True
+except Exception:
+    _HAS_PYG_RADIUS = False
+try:
+    from torch_cluster import radius_graph as tc_radius_graph
+    _HAS_TC_RADIUS = True
+except Exception:
+    _HAS_TC_RADIUS = False
+
+def _radius_graph(pos: torch.Tensor,
+                  r_cutoff: float,
+                  batch: torch.Tensor = None,
+                  max_num_neighbors: int = 64,
+                  loop: bool = False) -> torch.Tensor:
+    """
+    A thin wrapper that calls an available radius_graph implementation.
+    - pos: (N, 3) float tensor
+    - r_cutoff: float cutoff radius (in the same unit as pos)
+    - batch: optional (N,) tensor if you build multi-graph at once
+    - max_num_neighbors: cap neighbors per node to avoid dense graphs
+    - loop: include self loops or not
+    Returns:
+      edge_index: (2, E) long tensor
+    """
+    if _HAS_PYG_RADIUS:
+        # torch_geometric.nn.radius_graph API
+        return pyg_radius_graph(pos, r_cutoff, batch=batch,
+                                max_num_neighbors=max_num_neighbors,
+                                loop=loop)
+    elif _HAS_TC_RADIUS:
+        # torch_cluster.radius_graph API
+        return tc_radius_graph(pos, r_cutoff, batch=batch,
+                               max_num_neighbors=max_num_neighbors,
+                               loop=loop)
+    else:
+        raise ImportError(
+            "No radius_graph implementation found. "
+            "Please install torch-geometric (>=2.4) or torch-cluster."
+        )
 
 # Mapping from atomic symbol to atomic number
 ATOMIC_NUM_MAP = {
@@ -20,10 +65,11 @@ ATOMIC_NUM_MAP = {
     'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86
 }
 
-def read_xyz_file(filepath):
+def read_xyz_file(filepath, r_cutoff: float = 5.0, max_num_neighbors: int = 64):
     """
     Reads an XYZ file and extracts atomic numbers, positions, and energy.
     The energy is assumed to be in the comment line.
+    Also dynamically builds a radius graph with the given cutoff.
     """
     with open(filepath, 'r') as f:
         lines = f.readlines()
@@ -54,14 +100,34 @@ def read_xyz_file(filepath):
     atomic_numbers = torch.tensor(atoms, dtype=torch.long)
     pos = torch.tensor(positions, dtype=torch.float)
 
-    return Data(z=atomic_numbers, pos=pos, y=torch.tensor([energy], dtype=torch.float), natoms=torch.tensor([num_atoms], dtype=torch.long))
+    # --- 动态构图：基于半径的邻接 ---
+    # 单分子样本，不需要 batch；loop=False 去除自环
+    edge_index = _radius_graph(
+        pos=pos, r_cutoff=r_cutoff, batch=None,
+        max_num_neighbors=max_num_neighbors, loop=False
+    )
+    # 无向化：添加反向边并做去重（coalesce）
+    rev = edge_index.flip(0)
+    edge_index = torch.cat([edge_index, rev], dim=1)
+    edge_index = coalesce(edge_index, num_nodes=pos.size(0))
+
+    return Data(
+        atoms=atomic_numbers,
+        pos=pos,
+        edge_index=edge_index,
+        y=torch.tensor([energy], dtype=torch.float),
+        natoms=torch.tensor([num_atoms], dtype=torch.long),
+    )
 
 class MolecularDataset(Dataset):
     """
     A PyTorch Geometric dataset for loading molecular data from .xyz files from a single directory.
     """
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(self, root, transform=None, pre_transform=None,
+                r_cutoff: float = 5.0, max_num_neighbors: int = 64):
         self.file_paths = sorted(glob(os.path.join(root, '*.xyz')))
+        self.r_cutoff = r_cutoff
+        self.max_num_neighbors = max_num_neighbors 
         super().__init__(root, transform, pre_transform)
 
     def len(self):
@@ -69,7 +135,11 @@ class MolecularDataset(Dataset):
 
     def get(self, idx):
         filepath = self.file_paths[idx]
-        data = read_xyz_file(filepath)
+        data = read_xyz_file(
+            filepath,
+            r_cutoff=self.r_cutoff,
+            max_num_neighbors=self.max_num_neighbors
+        )
         return data
 
 class TautobaseDataset(Dataset):
@@ -82,13 +152,16 @@ class TautobaseDataset(Dataset):
       - B_xyz/
         - b_1.xyz, b_2.xyz, ...
     """
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(self, root, transform=None, pre_transform=None,
+                 r_cutoff: float = 5.0, max_num_neighbors: int = 64):
         self.paths_a = sorted(glob(os.path.join(root, 'A_xyz', '*.xyz')), key=self._sort_key)
         self.paths_b = sorted(glob(os.path.join(root, 'B_xyz', '*.xyz')), key=self._sort_key)
 
         if len(self.paths_a) != len(self.paths_b):
             raise ValueError("Mismatch in number of molecules in A_xyz and B_xyz directories.")
 
+        self.r_cutoff = r_cutoff
+        self.max_num_neighbors = max_num_neighbors
         super().__init__(root, transform, pre_transform)
 
     @staticmethod
@@ -103,8 +176,16 @@ class TautobaseDataset(Dataset):
         path_a = self.paths_a[idx]
         path_b = self.paths_b[idx]
 
-        data_a = read_xyz_file(path_a)
-        data_b = read_xyz_file(path_b)
+        data_a = read_xyz_file(
+            path_a,
+            r_cutoff=self.r_cutoff,
+            max_num_neighbors=self.max_num_neighbors
+        )
+        data_b = read_xyz_file(
+            path_b,
+            r_cutoff=self.r_cutoff,
+            max_num_neighbors=self.max_num_neighbors
+        )
 
         # The 'idx' in the data object will be useful for matching pairs later
         data_a.pair_id = idx
@@ -117,20 +198,21 @@ if __name__ == '__main__':
     print("--- Testing MolecularDataset (QM9 sample) ---")
     qm9_sample_path = '../../dataset_sample/qm9'
     if os.path.exists(qm9_sample_path):
-        qm9_dataset = MolecularDataset(root=qm9_sample_path)
+        qm9_dataset = MolecularDataset(root=qm9_sample_path, r_cutoff=5.0, max_num_neighbors=64)
         print(f"Found {len(qm9_dataset)} molecules.")
         if len(qm9_dataset) > 0:
             data_sample = qm9_dataset[0]
             print("Sample data object:", data_sample)
             print("Energy (y):", data_sample.y)
             print("Num atoms:", data_sample.natoms.item())
+            print("edge_index shape:", data_sample.edge_index.shape)
     else:
         print(f"Path not found: {qm9_sample_path}")
 
     print("\n--- Testing TautobaseDataset (QTautobase/QM9 sample) ---")
     tautobase_sample_path = '../../dataset_sample/QTautobase/QM9'
     if os.path.exists(tautobase_sample_path):
-        tautobase_dataset = TautobaseDataset(root=tautobase_sample_path)
+        tautobase_dataset = TautobaseDataset(root=tautobase_sample_path, r_cutoff=5.0, max_num_neighbors=64)
         print(f"Found {len(tautobase_dataset)} tautomer pairs.")
         if len(tautobase_dataset) > 0:
             pair_sample = tautobase_dataset[0]
@@ -139,5 +221,7 @@ if __name__ == '__main__':
             print("Energy A (y):", data_a.y)
             print("Sample pair (B):", data_b)
             print("Energy B (y):", data_b.y)
+            print("A edge_index shape:", data_a.edge_index.shape)
+            print("B edge_index shape:", data_b.edge_index.shape)
     else:
         print(f"Path not found: {tautobase_sample_path}")

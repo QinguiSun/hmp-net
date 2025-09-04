@@ -61,7 +61,20 @@ class SchNetModel(SchNet):
 
     def forward(self, batch):
         
-        h = self.embedding(batch.atoms)  # (n,) -> (n, d)
+        # 取原子序号：优先 atoms，其次 z，再次 atomic_numbers
+        atoms = getattr(batch, "atoms", None)
+        if atoms is None:
+            atoms = getattr(batch, "z", None)
+        if atoms is None:
+            atoms = getattr(batch, "atomic_numbers", None)
+        if atoms is None:
+            raise AttributeError(
+                "No atomic numbers tensor found. Expected one of: batch.atoms, batch.z, batch.atomic_numbers"
+            )
+        atoms = atoms.long()  # 确保是 Long
+
+        h = self.embedding(atoms)  # (n,) -> (n, d)
+        #h = self.embedding(batch.atoms)  # (n,) -> (n, d)
 
         row, col = batch.edge_index
         edge_weight = (batch.pos[row] - batch.pos[col]).norm(dim=-1)

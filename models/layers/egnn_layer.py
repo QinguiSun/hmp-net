@@ -2,6 +2,7 @@ import torch
 from torch.nn import Linear, ReLU, SiLU, Sequential
 from torch_geometric.nn import MessagePassing, global_add_pool, global_mean_pool
 from torch_scatter import scatter
+from torch_geometric.nn import global_add_pool
 
 
 class EGNNLayer(MessagePassing):
@@ -56,6 +57,16 @@ class EGNNLayer(MessagePassing):
         Returns:
             out: [(n, d),(n,3)] - updated node features
         """
+        # --- Sanity checks ---
+        assert edge_index.dtype == torch.long, "edge_index must be torch.long"
+        N = h.size(0)
+        if edge_index.numel() > 0:
+            min_idx = int(edge_index.min())
+            max_idx = int(edge_index.max())
+            assert min_idx >= 0, f"edge_index contains negative index: {min_idx}"
+            assert max_idx < N, f"edge_index.max()={max_idx} >= N={N} (h.size(0))"
+        assert h.size(0) == pos.size(0), f"h and pos node counts differ: {h.size(0)} vs {pos.size(0)}"
+        # ----------------------
         out = self.propagate(edge_index, h=h, pos=pos, size=size)
         return out
 

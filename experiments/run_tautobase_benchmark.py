@@ -7,7 +7,7 @@ from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 
 # --- Utility Imports ---
-from utils.tautobase_utils import MolecularDataset, TautobaseDataset
+from utils.tautobase_utils import MolecularDataset, TautobaseDataset #collate_with_radius_graph
 
 # --- Model Imports ---
 # Backbone Models
@@ -40,10 +40,10 @@ def get_model_configs(l_value, out_dim=1):
     # --- Common Hyperparameters for Backbone Models ---
     # These are chosen to be reasonable defaults and can be easily modified here.
     common_params = {
-        'schnet': {'hidden_channels': 128, 'num_filters': 128, 'num_interactions': 6, 'num_gaussians': 50, 'cutoff': 10.0},
-        'dimenet': {'hidden_channels': 128, 'out_emb_channels': 256, 'int_emb_channels': 64, 'num_bilinear': 8, 'num_spherical': 7, 'num_radial': 6, 'cutoff': 5.0, 'num_before_skip': 1, 'num_after_skip': 2, 'num_output_layers': 3, 'num_blocks': 4},
+        'schnet': {'hidden_channels': 128, 'num_filters': 128, 'num_layers': 6, 'num_gaussians': 50, 'cutoff': 10.0},
+        'dimenet': {'hidden_channels': 128, 'out_emb_channels': 256, 'int_emb_size': 64, 'basis_emb_size': 8, 'num_spherical': 7, 'num_radial': 6, 'cutoff': 5.0, 'num_before_skip': 1, 'num_after_skip': 2, 'num_output_layers': 3, 'num_layers': 4},
         'spherenet': {'hidden_channels': 128, 'num_layers': 4, 'cutoff': 5.0},
-        'egnn': {'hidden_dim': 128, 'num_layers': 6},
+        'egnn': {'emb_dim': 128, 'num_layers': 6},
         'gvpgnn': {'s_dim': 128, 'v_dim': 64, 'num_layers': 6},
         'tfn': {'hidden_dim': 128, 'degree': 2, 'num_layers': 6},
         'mace': {'hidden_dim': 128, 'correlation': 3, 'max_ell': 3, 'num_layers': 2}, # MACE is heavy, fewer layers
@@ -60,8 +60,8 @@ def get_model_configs(l_value, out_dim=1):
     model_configs = {
         # --- Backbone Models ---
         'SchNet':    {'class': SchNetModel,    'params': {**common_params['schnet'], 'out_dim': out_dim}},
-        'DimeNet':   {'class': DimeNetPPModel, 'params': {**common_params['dimenet'], 'out_dim': out_dim}},
-        'SphereNet': {'class': SphereNetModel, 'params': {**common_params['spherenet'], 'out_dim': out_dim}},
+        #'DimeNet':   {'class': DimeNetPPModel, 'params': {**common_params['dimenet'], 'out_dim': out_dim}},
+        #'SphereNet': {'class': SphereNetModel, 'params': {**common_params['spherenet'], 'out_dim': out_dim}},
         'EGNN':      {'class': EGNNModel,      'params': {**common_params['egnn'], 'out_dim': out_dim}},
         'GVP-GNN':   {'class': GVPGNNModel,    'params': {**common_params['gvpgnn'], 'out_dim': out_dim}},
         'TFN':       {'class': TFNModel,       'params': {**common_params['tfn'], 'out_dim': out_dim}},
@@ -82,7 +82,7 @@ def get_model_configs(l_value, out_dim=1):
         },
         'HMP-EGNN': {
             'class': HMP_EGNNModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['egnn']['hidden_dim'], 'out_dim': out_dim, **hmp_params}
+            'params': {'num_layers': l_value, 'emb_dim': common_params['egnn']['emb_dim'], 'out_dim': out_dim, **hmp_params}
         },
         'HMP-GVPGNN': {
             'class': HMP_GVPGNNModel,
@@ -295,7 +295,40 @@ def main():
         val_dataset = torch.utils.data.Subset(full_train_dataset, val_indices)
 
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+        #train_loader = DataLoader(
+        #                train_dataset,
+        #                batch_size=args.batch_size,
+        #                shuffle=True,
+        #                collate_fn=lambda lst: collate_with_radius_graph(lst, r_cutoff=5.0, max_num_neighbors=64)   # 生成 edge_index
+        #            )
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+        #val_loader = DataLoader(
+        #        val_dataset,
+        #        batch_size=args.batch_size,
+        #        shuffle=True,
+        #        collate_fn=lambda lst: collate_with_radius_graph(lst, r_cutoff=5.0, max_num_neighbors=64)   # 生成 edge_index
+        #    )
+        
+        def safe_shape(x):
+            try:
+                return tuple(x.shape)
+            except Exception:
+                if isinstance(x, (list, tuple)):
+                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
+                return type(x).__name__
+        """
+        batch = next(iter(train_loader))
+        print(batch)
+        print("edge_index:", type(getattr(batch, "edge_index", None)).__name__,
+            "shape=" if getattr(batch, "edge_index", None) is not None else "",
+            getattr(batch.edge_index, "shape", ""))
+        if getattr(batch, "edge_index", None) is not None and batch.edge_index.numel() > 0:
+            print("edge_index stats:",
+                "min=", int(batch.edge_index.min()),
+                "max=", int(batch.edge_index.max()),
+                "N=", batch.pos.size(0))
+        """
+
 
         print(f"Loading Tautobase/{name} test data...")
         test_dataset = TautobaseDataset(root=os.path.join(args.dataset_root, paths['test_dir']))

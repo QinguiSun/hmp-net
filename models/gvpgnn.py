@@ -16,7 +16,7 @@ class GVPGNNModel(torch.nn.Module):
         num_bessel: int = 8,
         num_polynomial_cutoff: int = 5,
         num_layers: int = 5,
-        in_dim=1,
+        num_embeddings=1,
         out_dim=1,
         s_dim: int = 128,
         v_dim: int = 16,
@@ -34,7 +34,7 @@ class GVPGNNModel(torch.nn.Module):
         - num_bessel (int): Number of Bessel basis functions (default: 8)
         - num_polynomial_cutoff (int): Number of polynomial cutoff basis functions (default: 5)
         - num_layers (int): Number of layers in the model (default: 5)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int): 词汇表大小 (default: 1) 
         - out_dim (int): Output dimension of the model (default: 1)
         - s_dim (int): Dimension of the node state embeddings (default: 128)
         - v_dim (int): Dimension of the node vector embeddings (default: 16)
@@ -57,7 +57,7 @@ class GVPGNNModel(torch.nn.Module):
         _DEFAULT_E_DIM = (s_dim_edge, v_dim_edge) 
 
         # Node embedding
-        self.emb_in = torch.nn.Embedding(in_dim, s_dim)
+        self.emb_in = torch.nn.Embedding(num_embeddings, s_dim)
         self.W_v = torch.nn.Sequential(
             gvp.LayerNorm((s_dim, 0)),
             gvp.GVP((s_dim, 0), _DEFAULT_V_DIM,

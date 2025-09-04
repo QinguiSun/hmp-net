@@ -14,7 +14,7 @@ class EGNNModel(torch.nn.Module):
         self,
         num_layers: int = 5,
         emb_dim: int = 128,     # hidden_dim
-        in_dim: int = 1,
+        num_embeddings: int = 1,    # 这个值应该等于你数据集中最大原子类型索引 + 1
         out_dim: int = 1,
         activation: str = "relu",
         norm: str = "layer",
@@ -29,7 +29,7 @@ class EGNNModel(torch.nn.Module):
         Parameters:
         - num_layers (int): Number of layers in the model (default: 5)
         - emb_dim (int): Dimension of the node embeddings (default: 128)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int): 词汇表大小 (default: 1)
         - out_dim (int): Output dimension of the model (default: 1)
         - activation (str): Activation function to be used (default: "relu")
         - norm (str): Normalization method to be used (default: "layer")
@@ -43,7 +43,7 @@ class EGNNModel(torch.nn.Module):
         self.residual = residual
 
         # Embedding lookup for initial node features
-        self.emb_in = torch.nn.Embedding(in_dim, emb_dim)
+        self.emb_in = torch.nn.Embedding(num_embeddings, emb_dim)
 
         # Stack of GNN layers
         self.convs = torch.nn.ModuleList()

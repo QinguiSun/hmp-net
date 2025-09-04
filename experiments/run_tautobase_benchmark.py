@@ -43,8 +43,8 @@ def get_model_configs(l_value, out_dim=1):
         'schnet': {'hidden_channels': 128, 'num_filters': 128, 'num_layers': 6, 'num_gaussians': 50, 'cutoff': 10.0},
         'dimenet': {'hidden_channels': 128, 'out_emb_channels': 256, 'int_emb_size': 64, 'basis_emb_size': 8, 'num_spherical': 7, 'num_radial': 6, 'cutoff': 5.0, 'num_before_skip': 1, 'num_after_skip': 2, 'num_output_layers': 3, 'num_layers': 4},
         'spherenet': {'hidden_channels': 128, 'num_layers': 4, 'cutoff': 5.0},
-        'egnn': {'emb_dim': 128, 'num_layers': 6},
-        'gvpgnn': {'s_dim': 128, 'v_dim': 64, 'num_layers': 6},
+        'egnn': {'emb_dim': 128, 'num_layers': 6, 'num_embeddings': 10},  # 
+        'gvpgnn': {'s_dim': 128, 'v_dim': 64, 'num_layers': 6, 'num_embeddings':10},
         'tfn': {'hidden_dim': 128, 'degree': 2, 'num_layers': 6},
         'mace': {'hidden_dim': 128, 'correlation': 3, 'max_ell': 3, 'num_layers': 2}, # MACE is heavy, fewer layers
     }
@@ -59,10 +59,10 @@ def get_model_configs(l_value, out_dim=1):
 
     model_configs = {
         # --- Backbone Models ---
-        'SchNet':    {'class': SchNetModel,    'params': {**common_params['schnet'], 'out_dim': out_dim}},
+        #'SchNet':    {'class': SchNetModel,    'params': {**common_params['schnet'], 'out_dim': out_dim}},
         #'DimeNet':   {'class': DimeNetPPModel, 'params': {**common_params['dimenet'], 'out_dim': out_dim}},
         #'SphereNet': {'class': SphereNetModel, 'params': {**common_params['spherenet'], 'out_dim': out_dim}},
-        'EGNN':      {'class': EGNNModel,      'params': {**common_params['egnn'], 'out_dim': out_dim}},
+        #'EGNN':      {'class': EGNNModel,      'params': {**common_params['egnn'], 'out_dim': out_dim}},
         'GVP-GNN':   {'class': GVPGNNModel,    'params': {**common_params['gvpgnn'], 'out_dim': out_dim}},
         'TFN':       {'class': TFNModel,       'params': {**common_params['tfn'], 'out_dim': out_dim}},
         'MACE':      {'class': MACEModel,      'params': {**common_params['mace'], 'out_dim': out_dim}},
@@ -316,9 +316,10 @@ def main():
                 if isinstance(x, (list, tuple)):
                     return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
                 return type(x).__name__
-        """
+        
         batch = next(iter(train_loader))
         print(batch)
+        
         print("edge_index:", type(getattr(batch, "edge_index", None)).__name__,
             "shape=" if getattr(batch, "edge_index", None) is not None else "",
             getattr(batch.edge_index, "shape", ""))
@@ -327,8 +328,7 @@ def main():
                 "min=", int(batch.edge_index.min()),
                 "max=", int(batch.edge_index.max()),
                 "N=", batch.pos.size(0))
-        """
-
+        
 
         print(f"Loading Tautobase/{name} test data...")
         test_dataset = TautobaseDataset(root=os.path.join(args.dataset_root, paths['test_dir']))

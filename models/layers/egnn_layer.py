@@ -57,18 +57,48 @@ class EGNNLayer(MessagePassing):
         Returns:
             out: [(n, d),(n,3)] - updated node features
         """
+
+        # ---- Debug & safety checks ----
+        if edge_index.dtype != torch.long:
+            raise TypeError(f"edge_index.dtype must be torch.long, got {edge_index.dtype}")
+        if edge_index.dim() != 2 or edge_index.size(0) != 2:
+            raise ValueError(f"edge_index shape must be [2, E], got {tuple(edge_index.shape)}")
+        num_nodes = pos.size(0)
+        # 先搬到CPU做检查，避免CUDA异步吞错
+        ei_cpu = edge_index.detach().cpu()
+        min_idx_cpu = int(ei_cpu.min())
+        max_idx_cpu = int(ei_cpu.max())
+        if min_idx_cpu < 0 or max_idx_cpu >= num_nodes:
+            # 打印尽量多的信息帮助定位
+            msg = (
+                f"Invalid edge_index range: min={min_idx_cpu}, max={max_idx_cpu}, "
+                f"but num_nodes={num_nodes}.\n"
+                f"edge_index sample (first 20 cols):\n{ei_cpu[:, :20]}\n"
+                f"h.shape={tuple(h.shape)}, pos.shape={tuple(pos.shape)}"
+            )
+            raise RuntimeError(msg)
+        if h.device != pos.device or h.device != edge_index.device:
+            raise RuntimeError(f"Device mismatch: h on {h.device}, pos on {pos.device}, edge_index on {edge_index.device}")
+
+        # 下面这行不再需要为调试同步，把min/max用CPU上已经算好的
+        min_idx = min_idx_cpu
+        max_idx = max_idx_cpu
+
+
         # --- Sanity checks ---
         assert edge_index.dtype == torch.long, "edge_index must be torch.long"
         N = h.size(0)
         if edge_index.numel() > 0:
-            min_idx = int(edge_index.min())
-            max_idx = int(edge_index.max())
+            #min_idx = int(edge_index.min())
+            #max_idx = int(edge_index.max())
             assert min_idx >= 0, f"edge_index contains negative index: {min_idx}"
             assert max_idx < N, f"edge_index.max()={max_idx} >= N={N} (h.size(0))"
+
         assert h.size(0) == pos.size(0), f"h and pos node counts differ: {h.size(0)} vs {pos.size(0)}"
         # ----------------------
         out = self.propagate(edge_index, h=h, pos=pos, size=size)
         return out
+    
 
     def message(self, h_i, h_j, pos_i, pos_j):
         # Compute messages

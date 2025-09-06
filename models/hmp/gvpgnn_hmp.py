@@ -110,7 +110,7 @@ class HMP_GVPGNNModel(torch.nn.Module):
         num_layers: int = 5,
         s_dim: int = 32,
         v_dim: int = 16,
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1,
         master_selection_hidden_dim: int = 32,
         lambda_attn: float = 0.1,
@@ -121,7 +121,7 @@ class HMP_GVPGNNModel(torch.nn.Module):
         self.s_dim = s_dim
         self.v_dim = v_dim
 
-        self.emb_in_s = torch.nn.Embedding(in_dim, s_dim)
+        self.emb_in_s = torch.nn.Embedding(num_embeddings, s_dim)
         # Each vector feature consists of 3 components.  The original
         # implementation only allocated ``v_dim`` channels which results in a
         # tensor of shape ``(n_nodes, 1, v_dim)`` after an ``unsqueeze`` in the
@@ -131,7 +131,7 @@ class HMP_GVPGNNModel(torch.nn.Module):
         # because the last dimension was ``v_dim`` instead of ``3``.  We allocate
         # ``v_dim * 3`` embedding dimensions here so that the tensor can be
         # properly viewed into ``(n_nodes, v_dim, 3)``.
-        self.emb_in_v = torch.nn.Embedding(in_dim, v_dim * 3)
+        self.emb_in_v = torch.nn.Embedding(num_embeddings, v_dim * 3)
 
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):

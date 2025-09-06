@@ -138,7 +138,7 @@ class HMP_TFNModel(nn.Module):
         #hidden_irreps: e3nn.o3.Irreps | None = None,
         hidden_irreps: Optional[e3nn.o3.Irreps] = None,
         mlp_dim: int = 256,
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1,
         aggr: str = "sum",
         gate: bool = True,
@@ -208,7 +208,7 @@ class HMP_TFNModel(nn.Module):
             )
             self.hmp_layers.append(layer)
 
-        self.emb_in = nn.Embedding(in_dim, emb_dim)
+        self.emb_in = nn.Embedding(num_embeddings, emb_dim)
         self.pool = global_add_pool
         self.pred = nn.Sequential(
             nn.Linear(emb_dim, emb_dim),

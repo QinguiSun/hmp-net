@@ -73,11 +73,11 @@ class HMPLayer(nn.Module):
         return h_final, pos_local, A_virtual, m
 
 class HMP_SchNetModel(torch.nn.Module):
-    def __init__(self, num_layers=5, emb_dim=128, in_dim=1, out_dim=1, s_dim=16,
+    def __init__(self, num_layers=5, emb_dim=128, num_embeddings=1, out_dim=1, s_dim=16,
                  master_selection_hidden_dim=32, lambda_attn=0.1, master_rate=0.25):
         super().__init__()
         self.master_rate = master_rate
-        self.emb_in = nn.Embedding(in_dim, emb_dim)
+        self.emb_in = nn.Embedding(num_embeddings, emb_dim)
         
         # SchNet specific setup
         self.distance_expansion = nn.Embedding(50, emb_dim) # Simplified

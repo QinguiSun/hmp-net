@@ -79,7 +79,7 @@ class HMP_SphereNetModel(torch.nn.Module):
         self,
         num_layers: int = 5,
         emb_dim: int = 128,
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1,
         s_dim: int = 16, # Dimension of scalar features for attention
         master_selection_hidden_dim: int = 32,
@@ -109,7 +109,7 @@ class HMP_SphereNetModel(torch.nn.Module):
         self.cutoff = cutoff
 
         self.emb = emb(num_spherical, num_radial, self.cutoff, envelope_exponent)
-        self.init_e = init(num_radial, emb_dim, act, use_node_features=use_node_features)
+        self.init_e = init(num_embeddings, num_radial, emb_dim, act, use_node_features=use_node_features)
         self.init_v = update_v(emb_dim, out_emb_channels, emb_dim, num_output_layers, act, output_init)
     
         self.hmp_layers = torch.nn.ModuleList()

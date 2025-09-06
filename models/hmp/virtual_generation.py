@@ -1,16 +1,4 @@
-'''
-class VirtualGeneration():
-    def __init__():
-        pass
-    
-    def attention():
-        pass
-    
-    def edge_generation():
-        edge_index = 
-        return edge_index
-'''  
-    
+# virtual_generation.py
 from typing import Optional
 
 import torch

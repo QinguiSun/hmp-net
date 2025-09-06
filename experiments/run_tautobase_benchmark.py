@@ -1,3 +1,4 @@
+# run_tautobase_benchmark.py
 import argparse
 import torch
 import os
@@ -30,9 +31,10 @@ from models.hmp.mace_hmp import HMP_MACEModel
 import time
 import torch.nn as nn
 from tqdm import tqdm
+import json
 
 # --- Model Configurations ---
-def get_model_configs(l_value, out_dim=1):
+def get_model_configs(l_value, num_atom_classes, out_dim=1):
     """
     Returns a dictionary of model configurations.
     Ensures that HMP models share core hyperparameters with their backbone counterparts.
@@ -40,19 +42,19 @@ def get_model_configs(l_value, out_dim=1):
     # --- Common Hyperparameters for Backbone Models ---
     # These are chosen to be reasonable defaults and can be easily modified here.
     common_params = {
-        'schnet': {'hidden_channels': 128, 'num_filters': 128, 'num_layers': 6, 'num_gaussians': 50, 'cutoff': 10.0},
-        'dimenet': {'hidden_channels': 128, 'out_emb_channels': 256, 'int_emb_size': 64, 'basis_emb_size': 8, 'num_spherical': 7, 'num_radial': 6, 'cutoff': 5.0, 'num_before_skip': 1, 'num_after_skip': 2, 'num_output_layers': 3, 'num_layers': 4},
-        'spherenet': {'hidden_channels': 128, 'num_layers': 4, 'cutoff': 5.0},
-        'egnn': {'emb_dim': 128, 'num_layers': 6, 'num_embeddings': 10},  # 
-        'gvpgnn': {'s_dim': 128, 'v_dim': 64, 'num_layers': 6, 'num_embeddings':10},
-        'tfn': {'hidden_dim': 128, 'degree': 2, 'num_layers': 6},
-        'mace': {'hidden_dim': 128, 'correlation': 3, 'max_ell': 3, 'num_layers': 2}, # MACE is heavy, fewer layers
+        'schnet': {'hidden_channels': 128, 'num_filters': 128, 'num_layers': 6, 'num_gaussians': 50, 'cutoff': 10.0, 'num_embeddings':num_atom_classes},
+        'dimenet': {'hidden_channels': 128, 'out_emb_channels': 256, 'num_embeddings':num_atom_classes, 'int_emb_size': 64, 'basis_emb_size': 8, 'num_spherical': 7, 'num_radial': 6, 'cutoff': 5.0, 'num_before_skip': 1, 'num_after_skip': 2, 'num_output_layers': 3, 'num_layers': 4},
+        'spherenet': {'hidden_channels': 128, 'num_layers': 4, 'cutoff': 5.0, 'num_embeddings': num_atom_classes},
+        'egnn': {'emb_dim': 128, 'num_layers': 6, 'num_embeddings': num_atom_classes},  # 
+        'gvpgnn': {'s_dim': 128, 'v_dim': 64, 'num_layers': 6, 'num_embeddings':num_atom_classes},
+        'tfn': {'emb_dim': 128, 'max_ell': 2, 'num_layers': 6, 'num_embeddings':num_atom_classes},
+        'mace': {'emb_dim': 64, 'correlation': 3, 'max_ell': 3, 'num_layers': 2, 'num_embeddings':num_atom_classes}, # MACE is heavy, fewer layers
     }
-
+                                                                                        
     # --- HMP-Net Specific Hyperparameters ---
     hmp_params = {
         'master_rate': 0.25,
-        's_dim': 32, # Note: This is for the master node embedding, not the backbone's s_dim
+        's_dim': 32,    # 节点特征中标量部分的维度. Note: This is for the master node embedding, not the backbone's s_dim
         'master_selection_hidden_dim': 64,
         'lambda_attn': 0.1
     }
@@ -63,41 +65,41 @@ def get_model_configs(l_value, out_dim=1):
         #'DimeNet':   {'class': DimeNetPPModel, 'params': {**common_params['dimenet'], 'out_dim': out_dim}},
         #'SphereNet': {'class': SphereNetModel, 'params': {**common_params['spherenet'], 'out_dim': out_dim}},
         #'EGNN':      {'class': EGNNModel,      'params': {**common_params['egnn'], 'out_dim': out_dim}},
-        'GVP-GNN':   {'class': GVPGNNModel,    'params': {**common_params['gvpgnn'], 'out_dim': out_dim}},
-        'TFN':       {'class': TFNModel,       'params': {**common_params['tfn'], 'out_dim': out_dim}},
-        'MACE':      {'class': MACEModel,      'params': {**common_params['mace'], 'out_dim': out_dim}},
+        #'GVP-GNN':   {'class': GVPGNNModel,    'params': {**common_params['gvpgnn'], 'out_dim': out_dim}},
+        #'TFN':       {'class': TFNModel,       'params': {**common_params['tfn'], 'out_dim': out_dim}},
+        #'MACE':      {'class': MACEModel,      'params': {**common_params['mace'], 'out_dim': out_dim}},
 
         # --- HMP-Enhanced Models ---
-        'HMP-SchNet': {
-            'class': HMP_SchNetModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['schnet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
-        },
-        'HMP-DimeNet': {
-            'class': HMP_DimeNetPPModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['dimenet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
-        },
-        'HMP-SphereNet': {
-            'class': HMP_SphereNetModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['spherenet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
-        },
-        'HMP-EGNN': {
-            'class': HMP_EGNNModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['egnn']['emb_dim'], 'out_dim': out_dim, **hmp_params}
-        },
-        'HMP-GVPGNN': {
-            'class': HMP_GVPGNNModel,
-            # Note: HMP-GVPGNN's constructor takes s_dim and v_dim directly, not as backbone params.
-            # We set them to be the same as the backbone's for a fair comparison.
-            'params': {'num_layers': l_value, 's_dim': common_params['gvpgnn']['s_dim'], 'v_dim': common_params['gvpgnn']['v_dim'], 'out_dim': out_dim, **hmp_params}
-        },
-        'HMP-TFN': {
-            'class': HMP_TFNModel,
-            # Note: HMP-TFN takes max_ell and emb_dim. We map TFN's degree -> max_ell and hidden_dim -> emb_dim.
-            'params': {'num_layers': l_value, 'emb_dim': common_params['tfn']['hidden_dim'], 'max_ell': common_params['tfn']['degree'], 'out_dim': out_dim, **hmp_params}
-        },
+        #'HMP-SchNet': {
+        #    'class': HMP_SchNetModel,
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['schnet']['num_embeddings'], 'emb_dim': common_params['schnet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
+        #},
+        #'HMP-DimeNet': {
+        #    'class': HMP_DimeNetPPModel,
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['dimenet']['num_embeddings'], 'emb_dim': common_params['dimenet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
+        #},
+        #'HMP-SphereNet': {
+        #    'class': HMP_SphereNetModel,
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['spherenet']['num_embeddings'], 'emb_dim': common_params['spherenet']['hidden_channels'], 'out_dim': out_dim, **hmp_params}
+        #},
+        #'HMP-EGNN': {
+        #    'class': HMP_EGNNModel,
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['egnn']['num_embeddings'],'emb_dim': common_params['egnn']['emb_dim'], 'out_dim': out_dim, **hmp_params}
+        #},
+        #'HMP-GVPGNN': {
+        #    'class': HMP_GVPGNNModel,
+        #    # Note: HMP-GVPGNN's constructor takes s_dim and v_dim directly, not as backbone params.
+        #    # We set them to be the same as the backbone's for a fair comparison.
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['gvpgnn']['num_embeddings'], 's_dim': common_params['gvpgnn']['s_dim'], 'v_dim': common_params['gvpgnn']['v_dim'], 'out_dim': out_dim, **hmp_params}
+        #},
+        #'HMP-TFN': {
+        #    'class': HMP_TFNModel,
+        #    # Note: HMP-TFN takes max_ell and emb_dim. We map TFN's degree -> max_ell and hidden_dim -> emb_dim.
+        #    'params': {'num_layers': l_value, 'num_embeddings': common_params['tfn']['num_embeddings'], 'emb_dim': common_params['tfn']['emb_dim'], 'max_ell': common_params['tfn']['max_ell'], 'out_dim': out_dim, **hmp_params}
+        #},
         'HMP-MACE': {
             'class': HMP_MACEModel,
-            'params': {'num_layers': l_value, 'emb_dim': common_params['mace']['hidden_dim'], 'correlation': common_params['mace']['correlation'], 'max_ell': common_params['mace']['max_ell'], 'out_dim': out_dim, **hmp_params}
+            'params': {'num_layers': l_value, 'num_embeddings': common_params['mace']['num_embeddings'], 'emb_dim': common_params['mace']['emb_dim'], 'correlation': common_params['mace']['correlation'], 'max_ell': common_params['mace']['max_ell'], 'out_dim': out_dim, **hmp_params}
         },
     }
     return model_configs
@@ -256,6 +258,34 @@ def save_results(model_name, dataset_name, detailed_results, summary_metrics, ov
             writer.writeheader()
             writer.writerows(overall_summary_list)
 
+class MapAtomTypes:
+    """
+    一个可调用的类 (callable class)，用于将 Data 对象中的原子序数
+    根据提供的 atom_map 转换为连续索引。
+    """
+    def __init__(self, atom_map):
+        self.atom_map = atom_map
+        # 如果映射中没有'<UNK>'，则不设置 unk_idx，以避免错误 ---
+        # 我们将在扫描时决定是否添加 <UNK>
+        #self.unk_idx = atom_map.get('<UNK>', 0) # 获取UNK的索引
+        self.unk_idx = atom_map.get('<UNK>')
+
+    def __call__(self, data):
+        # 使用列表推导式和我们创建的映射字典进行转换
+        # .item() 用于从零维张量中取出 Python 数字
+        #mapped_atoms = [self.atom_map[atom_num.item()] for atom_num in data.atoms]
+        
+        if self.unk_idx is not None:
+            # 使用 .get()，如果 key 不存在，则返回默认值 self.unk_idx
+            mapped_atoms = [self.atom_map.get(atom_num.item(), self.unk_idx) for atom_num in data.atoms]
+        else:
+            # 如果没有 UNK，直接映射（假设所有原子都在 map 中）
+            mapped_atoms = [self.atom_map[atom_num.item()] for atom_num in data.atoms]
+            
+        # 将转换后的列表变回张量，并替换掉原始的 data.atoms
+        data.atoms = torch.tensor(mapped_atoms, dtype=torch.long)
+        return data
+
 # --- Main Execution ---
 
 def main():
@@ -277,6 +307,44 @@ def main():
         'PC9': {'train_dir': 'PC9/XYZ', 'test_dir': 'QTautobase/PC9'},
         'ANI-1E': {'train_dir': 'ANI-1E/xyz', 'test_dir': 'QTautobase/ANI1E'}
     }
+    
+    # 1. 扫描所有数据集以创建全局原子映射
+    atom_map_file = "QTautobase_atom_map.json"
+    if os.path.exists(atom_map_file):
+        print(f"Loading global atom map from {atom_map_file}")
+        with open(atom_map_file, 'r') as f:
+            atom_map = {int(k): v for k, v in json.load(f).items()}
+    else:
+        print(f"Global atom map not found. Scanning all datasets to create {atom_map_file}...")
+        global_atom_types = set()
+        
+        for name, paths in dataset_configs.items():
+            print(f"  -> Scanning {name} training set...")
+            train_path = os.path.join(args.dataset_root, paths['train_dir'])
+            # 临时加载数据集（无 transform）以进行扫描
+            scan_train_dataset = MolecularDataset(root=train_path)
+            for data in tqdm(scan_train_dataset, desc=f"Scanning {name} train"):
+                global_atom_types.update(data.atoms.tolist())
+
+            print(f"  -> Scanning Tautobase/{name} test set...")
+            test_path = os.path.join(args.dataset_root, paths['test_dir'])
+            scan_test_dataset = TautobaseDataset(root=test_path)
+            for data_a, data_b in tqdm(scan_test_dataset, desc=f"Scanning {name} test"):
+                global_atom_types.update(data_a.atoms.tolist())
+                global_atom_types.update(data_b.atoms.tolist())
+
+        sorted_atom_types = sorted(list(global_atom_types))
+        atom_map = {atomic_num: i for i, atomic_num in enumerate(sorted_atom_types)}
+        
+        print(f"Global vocabulary size: {len(atom_map)}")
+        print("Global atom map:", atom_map)
+        
+        with open(atom_map_file, 'w') as f:
+            json.dump(atom_map, f, indent=4)
+        print(f"Saved global atom map to {atom_map_file}")
+    
+    num_atom_classes = len(atom_map)
+    atom_mapping_transform = MapAtomTypes(atom_map)
 
     overall_summary = []
 
@@ -285,7 +353,10 @@ def main():
 
         # 1. Load Data
         print(f"Loading {name} training data...")
-        full_train_dataset = MolecularDataset(root=os.path.join(args.dataset_root, paths['train_dir']))
+        full_train_dataset = MolecularDataset(
+            root=os.path.join(args.dataset_root, paths['train_dir']), 
+            transform=atom_mapping_transform
+        )
 
         # Split data
         train_indices, val_indices = train_test_split(
@@ -308,37 +379,17 @@ def main():
         #        shuffle=True,
         #        collate_fn=lambda lst: collate_with_radius_graph(lst, r_cutoff=5.0, max_num_neighbors=64)   # 生成 edge_index
         #    )
-        
-        def safe_shape(x):
-            try:
-                return tuple(x.shape)
-            except Exception:
-                if isinstance(x, (list, tuple)):
-                    return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
-                return type(x).__name__
-        
-        batch = next(iter(train_loader))
-        print(batch)
-        
-        print("edge_index:", type(getattr(batch, "edge_index", None)).__name__,
-            "shape=" if getattr(batch, "edge_index", None) is not None else "",
-            getattr(batch.edge_index, "shape", ""))
-        if getattr(batch, "edge_index", None) is not None and batch.edge_index.numel() > 0:
-            print("edge_index stats:",
-                "min=", int(batch.edge_index.min()),
-                "max=", int(batch.edge_index.max()),
-                "N=", batch.pos.size(0))
-        
 
         print(f"Loading Tautobase/{name} test data...")
-        test_dataset = TautobaseDataset(root=os.path.join(args.dataset_root, paths['test_dir']))
+        test_dataset = TautobaseDataset(root=os.path.join(args.dataset_root, paths['test_dir']), transform=atom_mapping_transform)
         # Use batch_size=1 for pair-wise evaluation
         test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
         print(f"Data loaded: {len(train_dataset)} train, {len(val_dataset)} val, {len(test_dataset)} test pairs.")
-
+            
         # 2. Get Model Configurations
-        model_configs = get_model_configs(args.L)
+        # 将 num_atom_classes 传递给模型配置函数
+        model_configs = get_model_configs(args.L, num_atom_classes)
 
         for model_name, config in model_configs.items():
             print(f"\n--- Training Model: {model_name} on {name} ---")

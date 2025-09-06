@@ -79,7 +79,8 @@ class HMP_EGNNModel(torch.nn.Module):
         self,
         num_layers: int = 5,
         emb_dim: int = 128,
-        in_dim: int = 1,
+        num_embeddings: int = 1,
+        s_dim: int = 0,
         out_dim: int = 1,
         master_selection_hidden_dim: int = 32,
         lambda_attn: float = 0.1,
@@ -88,7 +89,7 @@ class HMP_EGNNModel(torch.nn.Module):
         super().__init__()
         self.master_rate = master_rate
 
-        self.emb_in = torch.nn.Embedding(in_dim, emb_dim)
+        self.emb_in = torch.nn.Embedding(num_embeddings, emb_dim)
 
         self.hmp_layers = torch.nn.ModuleList()
         for _ in range(num_layers):

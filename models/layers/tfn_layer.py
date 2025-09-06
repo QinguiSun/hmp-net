@@ -1,3 +1,4 @@
+# tfn_layer.py
 import torch
 from torch_scatter import scatter
 import e3nn
@@ -89,6 +90,7 @@ class TensorProductConvLayer(torch.nn.Module):
                 return type(x).__name__
         src, dst = edge_index
         #print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
+        #print("edge_index:", safe_shape(edge_index))
         #print("edge_index:\n", edge_index)
                     
         #print("node_attr:", safe_shape(node_attr))

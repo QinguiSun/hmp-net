@@ -67,12 +67,12 @@ class ResidualLayer(torch.nn.Module):
 
 
 class init(torch.nn.Module):
-    def __init__(self, num_radial, hidden_channels, act=swish, use_node_features=True):
+    def __init__(self, num_embeddings, num_radial, hidden_channels, act=swish, use_node_features=True):
         super(init, self).__init__()
         self.act = act
         self.use_node_features = use_node_features
         if self.use_node_features:
-            self.emb = Embedding(95, hidden_channels)
+            self.emb = Embedding(num_embeddings, hidden_channels)
         else: # option to use no node features and a learned embedding vector for each node instead
             self.node_embedding = nn.Parameter(torch.empty((hidden_channels,)))
             nn.init.normal_(self.node_embedding)

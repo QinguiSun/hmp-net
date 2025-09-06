@@ -1,15 +1,4 @@
-'''
-class MasterSelection(adjascent, features):
-    def __init__(adjascent, features):
-        pass
-    def MasterSelection(self, features, adjascent):
-        adjascent_mask = self.GumbelSoftmax()
-        return adjascent_mask
-    
-    def GumbelSoftmax():
-        pass
-    '''
-    
+# master_selection.py
 import math
 from typing import Tuple, Optional
 

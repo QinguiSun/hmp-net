@@ -42,7 +42,7 @@ class DimeNetPPModel(DimeNetPlusPlus):
     def __init__(
         self, 
         hidden_channels: int = 128, 
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1, 
         num_layers: int = 4,    # num_blocks
         int_emb_size: int = 64, 
@@ -63,7 +63,7 @@ class DimeNetPPModel(DimeNetPlusPlus):
 
         Parameters:
         - hidden_channels (int): Number of channels in the hidden layers (default: 128)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int): (default: 1)
         - out_dim (int): Output dimension of the model (default: 1)
         - num_layers (int): Number of layers in the model (default: 4)
         - int_emb_size (int): Embedding size for interaction features (default: 64)
@@ -100,6 +100,7 @@ class DimeNetPPModel(DimeNetPlusPlus):
             num_output_layers, 
             act
         )
+        self.embedding = torch.nn.Embedding(num_embeddings=num_embeddings, embedding_dim=hidden_channels)
 
     def forward(self, batch):
         

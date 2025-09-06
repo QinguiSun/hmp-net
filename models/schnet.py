@@ -15,7 +15,7 @@ class SchNetModel(SchNet):
     def __init__(
         self, 
         hidden_channels: int = 128, 
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1, 
         num_filters: int = 128, 
         num_layers: int = 6,
@@ -29,7 +29,7 @@ class SchNetModel(SchNet):
 
         Parameters:
         - hidden_channels (int): Number of channels in the hidden layers (default: 128)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int):  (default: 1)
         - out_dim (int): Output dimension of the model (default: 1)
         - num_filters (int): Number of filters used in convolutional layers (default: 128)
         - num_layers (int): Number of convolutional layers in the model (default: 6)
@@ -52,6 +52,8 @@ class SchNetModel(SchNet):
             std=None, 
             atomref=None
         )
+        # 不使用 padding_idx
+        self.embedding = torch.nn.Embedding(num_embeddings=num_embeddings, embedding_dim=hidden_channels)
 
         # Global pooling/readout function
         self.pool = {"mean": global_mean_pool, "sum": global_add_pool}[pool]

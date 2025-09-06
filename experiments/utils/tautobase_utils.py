@@ -1,7 +1,9 @@
+# tautobase_utils.py
 import os
 import re
 import torch
-from torch_geometric.data import Dataset, Data
+from torch.utils.data import Dataset
+from torch_geometric.data import Data 
 from glob import glob
 from tqdm import tqdm
 from torch_geometric.utils import coalesce
@@ -123,23 +125,28 @@ class MolecularDataset(Dataset):
     """
     A PyTorch Geometric dataset for loading molecular data from .xyz files from a single directory.
     """
-    def __init__(self, root, transform=None, pre_transform=None,
+    def __init__(self, root, transform=None, 
                 r_cutoff: float = 5.0, max_num_neighbors: int = 64):
+        self.root = root
+        self.transform = transform
         self.file_paths = sorted(glob(os.path.join(root, '*.xyz')))
         self.r_cutoff = r_cutoff
         self.max_num_neighbors = max_num_neighbors 
-        super().__init__(root, transform, pre_transform)
 
-    def len(self):
+    def __len__(self):
         return len(self.file_paths)
 
-    def get(self, idx):
+    def __getitem__(self, idx):
         filepath = self.file_paths[idx]
         data = read_xyz_file(
             filepath,
             r_cutoff=self.r_cutoff,
             max_num_neighbors=self.max_num_neighbors
         )
+        
+        if self.transform:
+            data = self.transform(data)
+            
         return data
 
 class TautobaseDataset(Dataset):
@@ -152,8 +159,10 @@ class TautobaseDataset(Dataset):
       - B_xyz/
         - b_1.xyz, b_2.xyz, ...
     """
-    def __init__(self, root, transform=None, pre_transform=None,
+    def __init__(self, root, transform=None, 
                  r_cutoff: float = 5.0, max_num_neighbors: int = 64):
+        self.root = root
+        self.transform = transform
         self.paths_a = sorted(glob(os.path.join(root, 'A_xyz', '*.xyz')), key=self._sort_key)
         self.paths_b = sorted(glob(os.path.join(root, 'B_xyz', '*.xyz')), key=self._sort_key)
 
@@ -162,17 +171,16 @@ class TautobaseDataset(Dataset):
 
         self.r_cutoff = r_cutoff
         self.max_num_neighbors = max_num_neighbors
-        super().__init__(root, transform, pre_transform)
 
     @staticmethod
     def _sort_key(s):
         # Extracts the number from filenames like 'a_1.xyz' or 'b_10.xyz'
         return int(re.search(r'\d+', os.path.basename(s)).group())
 
-    def len(self):
+    def __len__(self):
         return len(self.paths_a)
 
-    def get(self, idx):
+    def __getitem__(self, idx):
         path_a = self.paths_a[idx]
         path_b = self.paths_b[idx]
 
@@ -190,7 +198,11 @@ class TautobaseDataset(Dataset):
         # The 'idx' in the data object will be useful for matching pairs later
         data_a.pair_id = idx
         data_b.pair_id = idx
-
+        
+        if self.transform:
+            data_a = self.transform(data_a)
+            data_b = self.transform(data_b)
+            
         return data_a, data_b
 
 if __name__ == '__main__':

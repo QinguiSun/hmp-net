@@ -1,3 +1,4 @@
+# mace_hmp.py
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -11,6 +12,7 @@ from models.mace_modules.irreps_tools import reshape_irreps
 from models.hmp.master_selection import MasterSelection
 from models.hmp.virtual_generation import VirtualGeneration
 from models.layers.tfn_layer import TensorProductConvLayer
+from models.mace_modules.blocks import EquivariantProductBasisBlock
 
 class HMP_MACELayer(nn.Module):
     """
@@ -38,13 +40,13 @@ class HMP_MACELayer(nn.Module):
                 if isinstance(x, (list, tuple)):
                     return f"tuple(len={len(x)}): " + str([getattr(t, 'shape', type(t).__name__) for t in x])
                 return type(x).__name__
-        #print('----------------------------------------------------')
 
-        #print("h:", safe_shape(h))   
+        #print("h:", safe_shape(h))
         h_update = self.local_conv(h, edge_index, edge_sh, edge_feats)
         #print("h_update:", safe_shape(h_update))
         sc = F.pad(h, (0, h_update.shape[-1] - h.shape[-1]))
         #print("sc:", safe_shape(sc))
+        #print("self.reshape(h_update): ", safe_shape(self.reshape(h_update)))
         h_local = self.prod(self.reshape(h_update), sc, None)
         #print("h_local:", safe_shape(h_local)) 
         #print("h_local:\n", h_local)
@@ -158,9 +160,26 @@ class HMP_MACEModel(MACEModel):
     """
     HMP-enhanced MACE model.
     """
-    def __init__(self, master_rate=0.25, s_dim_scale=1, **kwargs):
+    def __init__(self, 
+                master_rate=0.25, 
+                num_embeddings=1, 
+                emb_dim=64,
+                correlation=3, 
+                residual=True,
+                equivariant_pred=False, 
+                out_dim=1,
+                s_dim =0, 
+                master_selection_hidden_dim=0, 
+                lambda_attn=0, 
+                s_dim_scale=1, 
+                **kwargs):
         # call MACEModel constructor
         super().__init__(**kwargs)
+        # **kwargs: 'num_layers': args.L, 'correlation': 3, 'max_ell': 3, 'out_dim': 1, 
+        # 'num_layers': args.L, 'num_embeddings': num_atom_classes, 'emb_dim': 128, 'correlation': 3, 'max_ell': 3, 'out_dim': 1, **hmp_params
+        self.emb_dim = emb_dim
+        
+        self.emb_in = torch.nn.Embedding(num_embeddings, emb_dim)
 
         # ------------------------------------------------------------------
         # Ensure hidden_irreps is computed.  If hiddnode_featsen_irreps=None or has zero
@@ -170,14 +189,16 @@ class HMP_MACEModel(MACEModel):
             sh_irreps = e3nn.o3.Irreps.spherical_harmonics(self.max_ell)
             # replicate each irrep emb_dim times and simplify
             self.hidden_irreps = (sh_irreps * self.emb_dim).sort()[0].simplify()
-
         self.master_rate = master_rate
         aggr = kwargs.get("aggr", "sum")
-
+        
         # ------------------------------------------------------------------
         # Override backbone with TensorProductConvLayer
         # First layer: scalar only -> tensor
+        #print(f"emb_dim: {emb_dim}")
+        #print(f"self.hidden_irreps:{self.hidden_irreps}")
         sh_irreps = self.spherical_harmonics.irreps_out
+        #print(f"sh_irreps: {sh_irreps}")
         self.convs = torch.nn.ModuleList()
         self.convs.append(
                 TensorProductConvLayer(
@@ -228,6 +249,33 @@ class HMP_MACEModel(MACEModel):
             batch_norm=self.batch_norm,
             gate=False,
         )
+        
+        self.reshapes = torch.nn.ModuleList([
+            reshape_irreps(self.hidden_irreps)
+        ])
+        self.prods = torch.nn.ModuleList([
+            EquivariantProductBasisBlock(
+                node_feats_irreps=self.hidden_irreps,
+                target_irreps=self.hidden_irreps,
+                correlation=correlation,
+                element_dependent=False,
+                num_elements=num_embeddings,
+                use_sc=residual
+            )
+        ])
+
+        for _ in range(self.num_layers - 1):
+            self.reshapes.append(reshape_irreps(self.hidden_irreps))
+            self.prods.append(
+                EquivariantProductBasisBlock(
+                    node_feats_irreps=self.hidden_irreps,
+                    target_irreps=self.hidden_irreps,
+                    correlation=correlation,
+                    element_dependent=False,
+                    num_elements=num_embeddings,
+                    use_sc=residual
+                )
+            )
 
         self.hmp_layers = torch.nn.ModuleList()
         for i in range(self.num_layers):
@@ -248,6 +296,17 @@ class HMP_MACEModel(MACEModel):
         del self.convs
         del self.prods
         del self.reshapes
+        
+        if self.equivariant_pred:
+            # Linear predictor for equivariant tasks using geometric features
+            self.pred = torch.nn.Linear(self.hidden_irreps.dim, out_dim)
+        else:
+            # MLP predictor for invariant tasks using only scalar features
+            self.pred = torch.nn.Sequential(
+                torch.nn.Linear(emb_dim, emb_dim),
+                torch.nn.ReLU(),
+                torch.nn.Linear(emb_dim, out_dim)
+            )
 
     def update_tau(self, epoch, n_epochs):
         initial_tau = 1.0

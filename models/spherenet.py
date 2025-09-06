@@ -16,7 +16,7 @@ class SphereNetModel(torch.nn.Module):
         cutoff: float = 10, 
         num_layers: int = 4,
         hidden_channels: int = 128, 
-        in_dim: int = 1, 
+        num_embeddings: int = 1, 
         out_dim: int = 1, 
         int_emb_size: int = 64,
         basis_emb_size_dist: int = 8, 
@@ -40,7 +40,7 @@ class SphereNetModel(torch.nn.Module):
         - cutoff (int): Cutoff distance for interactions (default: 10)
         - num_layers (int): Number of layers in the model (default: 4)
         - hidden_channels (int): Number of channels in the hidden layers (default: 128)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int): (default: 1)
         - out_dim (int): Output dimension of the model (default: 1)
         - int_emb_size (int): Embedding size for interaction features (default: 64)
         - basis_emb_size_dist (int): Embedding size for distance basis functions (default: 8)
@@ -61,7 +61,7 @@ class SphereNetModel(torch.nn.Module):
 
         self.cutoff = cutoff
 
-        self.init_e = init(num_radial, hidden_channels, act, use_node_features=use_node_features)
+        self.init_e = init(num_embeddings, num_radial, hidden_channels, act, use_node_features=use_node_features)
         self.init_v = update_v(hidden_channels, out_emb_channels, out_dim, num_output_layers, act, output_init)
         self.init_u = update_u()
         self.emb = emb(num_spherical, num_radial, self.cutoff, envelope_exponent)

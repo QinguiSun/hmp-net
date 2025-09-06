@@ -23,7 +23,7 @@ class TFNModel(torch.nn.Module):
         emb_dim: int = 64,
         hidden_irreps: Optional[e3nn.o3.Irreps] = None,
         mlp_dim: int = 256,
-        in_dim: int = 1,
+        num_embeddings: int = 1,
         out_dim: int = 1,
         aggr: str = "sum",
         pool: str = "sum",
@@ -42,7 +42,7 @@ class TFNModel(torch.nn.Module):
         - emb_dim (int): Scalar feature embedding dimension (default: 64)
         - hidden_irreps (Optional[e3nn.o3.Irreps]): Hidden irreps (default: None)
         - mlp_dim (int): Dimension of MLP for computing tensor product weights (default: 256)
-        - in_dim (int): Input dimension of the model (default: 1)
+        - num_embeddings (int):  (default: 1)
         - out_dim (int): Output dimension of the model (default: 1)
         - aggr (str): Aggregation method to be used (default: "sum")
         - pool (str): Global pooling method to be used (default: "sum")
@@ -83,7 +83,7 @@ class TFNModel(torch.nn.Module):
         )
 
         # Embedding lookup for initial node features
-        self.emb_in = torch.nn.Embedding(in_dim, emb_dim)
+        self.emb_in = torch.nn.Embedding(num_embeddings, emb_dim)
 
         # Set hidden irreps if none are provided
         if hidden_irreps is None:

@@ -14,7 +14,7 @@ class EGNNModel(torch.nn.Module):
         self,
         num_layers: int = 5,
         emb_dim: int = 128,     # hidden_dim
-        num_embeddings: int = 1,    # 这个值应该等于你数据集中最大原子类型索引 + 1
+        num_embeddings: int = 1,    
         out_dim: int = 1,
         activation: str = "relu",
         norm: str = "layer",

@@ -67,6 +67,19 @@ ATOMIC_NUM_MAP = {
     'Bi': 83, 'Po': 84, 'At': 85, 'Rn': 86
 }
 
+# MODIFICATION START: 创建一个辅助函数来处理非标准的科学计数法字符串
+def _parse_scientific_notation(s: str) -> float:
+    """
+    Converts a string with non-standard scientific notation to a float.
+    Handles formats like '1.23*^-4', '1.23*10^-4', '1.23D-04'.
+    """
+    # 规范化字符串，将所有变体替换为标准的 'e'
+    normalized_s = s.replace('D', 'e').replace('d', 'e')
+    normalized_s = normalized_s.replace('*10^', 'e')
+    normalized_s = normalized_s.replace('*^', 'e')
+    return float(normalized_s)
+# MODIFICATION END
+
 def read_xyz_file(filepath, r_cutoff: float = 5.0, max_num_neighbors: int = 64):
     """
     Reads an XYZ file and extracts atomic numbers, positions, and energy.
@@ -82,20 +95,50 @@ def read_xyz_file(filepath, r_cutoff: float = 5.0, max_num_neighbors: int = 64):
     # Example comment: "energy=-1192.3350663700505"
     comment = lines[1].strip()
     try:
-        # More robustly find the float value in the comment
-        energy_str = re.findall(r"[-+]?\d*\.\d+|\d+", comment)[-1]
-        energy = float(energy_str)
-    except (IndexError, ValueError):
-        # Fallback if energy is not found or parsing fails
-        energy = 0.0
-        # print(f"Warning: Could not parse energy from comment in {filepath}. Defaulting to 0.0.")
+        # MODIFICATION START: 修正了能量解析的逻辑
+        # 错误原因：之前的代码错误地将整个注释行字符串传递给 _parse_scientific_notation，
+        # 这会导致 float() 转换失败。
+        # 正确逻辑：1. 对整个注释行字符串进行文本替换，使其格式规范化。
+        #           2. 使用正则表达式从规范化的字符串中找出所有数字。
+        #           3. 将找到的最后一个数字字符串转换为浮点数。
 
+        # 1. 对整个注释行字符串进行文本替换，以处理非标准科学计数法
+        normalized_comment = comment.replace('D', 'e').replace('d', 'e')
+        normalized_comment = normalized_comment.replace('*10^', 'e')
+        normalized_comment = normalized_comment.replace('*^', 'e')
+
+        # 2. 在规范化后的字符串中查找所有数字模式（包括整数、浮点数和标准科学计数法）
+        numeric_strings = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", normalized_comment)
+        
+        if not numeric_strings:
+            raise ValueError("No numeric value found in comment line")
+
+        # 3. 最后一个找到的数字通常是能量值
+        energy = float(numeric_strings[-1])
+        # MODIFICATION END
+
+    except (IndexError, ValueError):
+        energy = 0.0
+        # 仅在调试时取消注释，以避免大量输出
+        print(f"Warning: Could not parse energy from comment in {filepath}. Defaulting to 0.0.")
+        
     atoms = []
     positions = []
     for i in range(2, 2 + num_atoms):
         line = lines[i].strip().split()
         symbol = line[0]
-        pos = [float(x) for x in line[1:4]]
+        
+        # MODIFICATION START: 在解析坐标时使用辅助函数
+        # 这样可以正确处理坐标值中出现的非标准科学计数法
+        try:
+            pos = [_parse_scientific_notation(x) for x in line[1:4]]
+        except (ValueError, IndexError) as e:
+            print(f"Error parsing coordinates in file: {filepath} on line {i+1}: '{lines[i].strip()}'")
+            # 如果某一行格式错误，可以选择跳过该文件或用零填充
+            # 这里我们选择用零填充并继续，但打印警告
+            pos = [0.0, 0.0, 0.0]
+        # MODIFICATION END
+        
         atoms.append(ATOMIC_NUM_MAP[symbol])
         positions.append(pos)
 

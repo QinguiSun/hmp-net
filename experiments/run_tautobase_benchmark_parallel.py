@@ -1,4 +1,4 @@
-# run_tautobase_benchmark.py
+# run_tautobase_benchmark_parallel.py
 import argparse
 import torch
 import os
@@ -117,30 +117,56 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, device, e
 
     for epoch in range(1, epochs + 1):
         # Gumbel-Softmax temperature annealing
-        if hasattr(model, 'update_tau'):
+        # MODIFICATION START: 访问由 DataParallel 包装的底层模型的自定义方法
+        # 如果模型被 nn.DataParallel 包装，实际的模型实例存储在 .module 属性中
+        # 我们需要检查 .module 属性是否存在，并调用其上的方法
+        model_instance = model.module if isinstance(model, nn.DataParallel) else model
+        if hasattr(model_instance, 'update_tau'):
             # The method signature is update_tau(epoch, n_epochs)
-            model.update_tau(epoch, epochs)
+            model_instance.update_tau(epoch, epochs)
+        # MODIFICATION END
 
         model.train()
         total_loss = 0
         for data in tqdm(train_loader, desc=f"Epoch {epoch:03d} [Train]", leave=False):
-            data = data.to(device)
+            # BUG修复: 开始
+            # -----------------------------------------------------------------------------------
+            # 问题描述: 当使用 nn.DataParallel 时, 推荐的做法是让模型本身处理从CPU到多个GPU的数据分发。
+            #           提前手动将数据移动到主设备 (data.to(device)) 可能会与 DataParallel 的
+            #           内部 scatter 机制冲突, 导致复杂的 PyG Batch 对象出现设备不一致的问题。
+            # 解决方案: 删除手动的 .to(device) 调用, 将CPU上的数据直接传递给 DataParallel 包装的模型。
+            # data = data.to(device) # <- 注释或删除此行
+            # -----------------------------------------------------------------------------------
+            # BUG修复: 结束
+            
+            # 保持 data 在 CPU 上, 不调用 data.to(device)
+            #data = data.to(device)
             optimizer.zero_grad()
-            out = model(data)
-            loss = loss_fn(out, data.y)
+            out = model(data)   # 将 CPU data 喂给模型
+            # 注意: 计算损失时, 目标 data.y 仍在CPU上, 而 out 在主GPU上。
+            # 需要将 data.y 移动到与 out 相同的设备上。
+            loss = loss_fn(out, data.y.to(out.device)) # 修改此行
+            #loss = loss_fn(out, data.y)
             loss.backward()
             optimizer.step()
             total_loss += loss.item() * data.num_graphs
+            
+            
         avg_train_loss = total_loss / len(train_loader.dataset)
 
         model.eval()
         total_val_loss = 0
         with torch.no_grad():
             for data in tqdm(val_loader, desc=f"Epoch {epoch:03d} [Val]", leave=False):
-                data = data.to(device)
+                # BUG修复: 在验证循环中也应用相同的修复
+                
+                # 保持 data 在 CPU 上
+                # data = data.to(device) # <- 注释或删除此行
                 out = model(data)
-                val_loss = loss_fn(out, data.y)
+                # 同样, 将标签 y 移动到和输出 out 相同的设备上计算损失
+                val_loss = loss_fn(out, data.y.to(out.device)) # 修改此行
                 total_val_loss += val_loss.item() * data.num_graphs
+                
         avg_val_loss = total_val_loss / len(val_loader.dataset)
 
         scheduler.step()
@@ -149,7 +175,13 @@ def train_model(model, train_loader, val_loader, optimizer, scheduler, device, e
 
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            best_model_state = model.state_dict()
+            # MODIFICATION START: 保存模型状态时，确保保存的是原始模型，而不是 DataParallel 包装器
+            # 这样做可以确保模型在不同设备配置（例如单GPU）下也能被正确加载
+            if isinstance(model, nn.DataParallel):
+                best_model_state = model.module.state_dict()
+            else:
+                best_model_state = model.state_dict()
+            # MODIFICATION END
             print(f"  -> New best validation loss: {best_val_loss:.6f}")
 
     end_time = time.time()
@@ -170,8 +202,10 @@ def evaluate_model(model, test_loader, device):
 
     with torch.no_grad():
         for idx, (data_a, data_b) in enumerate(tqdm(test_loader, desc="Evaluating on Test Set")):
-            data_a = data_a.to(device)
-            data_b = data_b.to(device)
+            # BUG修复: 在评估循环中也应用相同的修复
+            # 保持 data_a, data_b 在 CPU 上
+            # data_a = data_a.to(device) # <- 注释或删除此行
+            # data_b = data_b.to(device) # <- 注释或删除此行
 
             # Predict energies
             Ea_nn = model(data_a).item()
@@ -180,7 +214,9 @@ def evaluate_model(model, test_loader, device):
             # Get true energies
             Ea_DFT = data_a.y.item()
             Eb_DFT = data_b.y.item()
-
+            
+            # ... (后续计算都在CPU上进行, 无需修改) ...
+            
             # Calculate metrics
             Diff_MolA = Ea_nn - Ea_DFT
             Diff_MolB = Eb_nn - Eb_DFT
@@ -294,12 +330,49 @@ def main():
     parser.add_argument('--epochs', type=int, default=150, help='Number of training epochs')
     parser.add_argument('--lr', type=float, default=1e-4, help='Initial learning rate')
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
-    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use for training')
+    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu', help='Device to use for training (e.g., "cuda", "cuda:0", "cpu")')
     parser.add_argument('--dataset_root', type=str, default='../dataset_sample', help='Root directory of the datasets')
+    
+    # MODIFICATION START: 添加 --gpu_ids 参数以支持多GPU训练
+    # 用户可以通过命令行传递一个逗号分隔的GPU ID列表，例如 "0,1"
+    parser.add_argument('--gpu_ids', type=str, default='', help='Comma-separated list of GPU IDs to use for DataParallel (e.g., "0,1")')
+    # MODIFICATION START: 添加 --save_models 参数以支持保存模型
+    parser.add_argument('--save_models', action='store_true', help='Save the best model state dict for each trained model')
+    # MODIFICATION END
+    
     args = parser.parse_args()
 
     print("--- Tautobase Benchmark Script ---")
-    print(f"Args: L={args.L}, Epochs={args.epochs}, LR={args.lr}, Device={args.device}")
+    
+    # MODIFICATION START: 处理设备和GPU ID，为 DataParallel 做准备
+    device = torch.device(args.device)
+    gpu_ids = []
+    # 仅当CUDA可用且用户提供了gpu_ids时，才尝试使用DataParallel
+    if args.gpu_ids and torch.cuda.is_available():
+        try:
+            # 解析gpu_ids字符串为整数列表
+            gpu_ids = [int(id) for id in args.gpu_ids.split(',')]
+            if len(gpu_ids) > 1:
+                # 如果指定了多个GPU，则启用DataParallel模式
+                print(f"Using DataParallel on GPUs: {gpu_ids}")
+                # 将主设备设置为列表中的第一个GPU
+                device = torch.device(f"cuda:{gpu_ids[0]}")
+                # 增加总批量大小以有效利用多GPU
+                # 注意：总 batch_size 会被均分到各个GPU上
+                print(f"Total batch size is {args.batch_size}, each of the {len(gpu_ids)} GPUs will process a batch of size {args.batch_size // len(gpu_ids)}")
+            elif len(gpu_ids) == 1:
+                # 如果只指定了一个GPU，则不使用DataParallel，直接设置设备
+                print(f"Only one GPU ID provided ({gpu_ids[0]}). Not using DataParallel.")
+                if "cuda" in args.device:
+                     device = torch.device(f"cuda:{gpu_ids[0]}")
+        except ValueError:
+            # 如果gpu_ids格式错误，则打印警告并回退到单设备模式
+            print("Invalid --gpu_ids format. Please use a comma-separated list of integers (e.g., '0,1'). Falling back to --device setting.")
+            gpu_ids = [] # 出错时重置gpu_ids
+    
+    # 将最终确定的参数打印出来
+    print(f"Args: L={args.L}, Epochs={args.epochs}, LR={args.lr}, Device={device}")
+    # MODIFICATION END
 
     # Define the experimental setups
     dataset_configs = {
@@ -366,19 +439,7 @@ def main():
         val_dataset = torch.utils.data.Subset(full_train_dataset, val_indices)
 
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-        #train_loader = DataLoader(
-        #                train_dataset,
-        #                batch_size=args.batch_size,
-        #                shuffle=True,
-        #                collate_fn=lambda lst: collate_with_radius_graph(lst, r_cutoff=5.0, max_num_neighbors=64)   # 生成 edge_index
-        #            )
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-        #val_loader = DataLoader(
-        #        val_dataset,
-        #        batch_size=args.batch_size,
-        #        shuffle=True,
-        #        collate_fn=lambda lst: collate_with_radius_graph(lst, r_cutoff=5.0, max_num_neighbors=64)   # 生成 edge_index
-        #    )
 
         print(f"Loading Tautobase/{name} test data...")
         test_dataset = TautobaseDataset(root=os.path.join(args.dataset_root, paths['test_dir']), transform=atom_mapping_transform)
@@ -403,16 +464,39 @@ def main():
                     continue
 
             # 3. Initialize Model and Optimizer
-            model = config['class'](**config['params']).to(args.device)
+            model = config['class'](**config['params'])
+            
+            # MODIFICATION START: 如果指定了多个GPU，则使用 nn.DataParallel 包装模型
+            if len(gpu_ids) > 1:
+                model = nn.DataParallel(model, device_ids=gpu_ids)
+            # MODIFICATION END
+
+            model.to(device) # 将模型（或包装器）移动到主设备
             optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
             # 4. Train Model
-            best_model_state = train_model(model, train_loader, val_loader, optimizer, scheduler, args.device, args.epochs)
-            model.load_state_dict(best_model_state)
+            best_model_state = train_model(model, train_loader, val_loader, optimizer, scheduler, device, args.epochs)
+            
+             # MODIFICATION START: 如果用户指定，则保存最佳模型状态
+            if args.save_models:
+                models_dir = os.path.join('results', 'saved_models')
+                os.makedirs(models_dir, exist_ok=True)
+                model_save_path = os.path.join(models_dir, f"{model_name}_{name}_best.pt")
+                print(f"  -> Saving best model state to {model_save_path}")
+                torch.save(best_model_state, model_save_path)
+            # MODIFICATION END
+            
+            # MODIFICATION START: 加载最佳模型状态时，同样需要考虑模型是否被包装
+            # 如果是，则需要将状态加载到 .module 中
+            if isinstance(model, nn.DataParallel):
+                model.module.load_state_dict(best_model_state)
+            else:
+                model.load_state_dict(best_model_state)
+            # MODIFICATION END
 
             # 5. Evaluate Model
-            detailed_results, summary_metrics = evaluate_model(model, test_loader, args.device)
+            detailed_results, summary_metrics = evaluate_model(model, test_loader, device)
 
             # 6. Save Results
             # The save_results function now handles updating the overall_summary list

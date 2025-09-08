@@ -1,3 +1,4 @@
+# schnet.py
 from typing import Optional
 
 import torch
@@ -62,6 +63,20 @@ class SchNetModel(SchNet):
         self.lin2 = torch.nn.Linear(hidden_channels // 2, out_dim)
 
     def forward(self, batch):
+        
+        # BUG修复: 开始
+        # -----------------------------------------------------------------------------------
+        # 问题描述: torch.nn.DataParallel 无法正确地将 PyG Batch 对象的所有内部张量从 CPU 分发到 GPU。
+        # 解决方案: 在 forward 方法的入口处, 手动将整个 batch 对象移动到当前模型副本所在的设备。
+        #           这确保了在进行任何计算之前, 数据和模型参数都在同一个设备上。
+        
+        # 1. 获取当前模型副本所在的设备 (例如 cuda:0 或 cuda:1)
+        device = self.embedding.weight.device
+        # 2. 将整个 batch 对象及其所有张量属性移动到该设备
+        batch = batch.to(device)
+        # -----------------------------------------------------------------------------------
+        # BUG修复: 结束
+        
         
         # 取原子序号：优先 atoms，其次 z，再次 atomic_numbers
         atoms = getattr(batch, "atoms", None)

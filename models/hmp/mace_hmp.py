@@ -60,9 +60,12 @@ class HMP_MACELayer(nn.Module):
         #print("master_nodes_mask:\n", master_nodes_mask)
         num_master_nodes = master_nodes_mask.sum()
         #print("num_master_nodes:", num_master_nodes)
-
+        
         if num_master_nodes <= 1:
-            return h_local, torch.zeros((0, 0), device=h.device), m
+            # MODIFICATION START: 当无法形成有意义的层级结构时，返回空的虚拟边索引
+            empty_edge_index = torch.empty((2, 0), dtype=torch.long, device=h.device)
+            return h_local, torch.zeros((0, 0), device=h.device), m, empty_edge_index
+            # MODIFICATION END
 
         master_indices = torch.where(master_nodes_mask)[0]
         #print("master_indices:", safe_shape(master_indices))
@@ -153,7 +156,9 @@ class HMP_MACELayer(nn.Module):
         m_expanded = m.unsqueeze(1)
         h_final = (1 - m_expanded) * h_local + m_expanded * h_hierarchical_expanded
         
-        return h_final, A_virtual, m
+        # MODIFICATION START: 返回在全局索引空间下的虚拟边
+        return h_final, A_virtual, m, edge_index_virtual_global
+        # MODIFICATION END
 
 
 class HMP_MACEModel(MACEModel):
@@ -319,7 +324,9 @@ class HMP_MACEModel(MACEModel):
         for layer in self.hmp_layers:
             layer.master_selection.tau.fill_(tau)
 
-    def forward(self, batch):
+    # MODIFICATION START: 添加可选参数 return_virtual_edges 以控制返回值
+    def forward(self, batch, return_virtual_edges=False):
+    # MODIFICATION END
         h = self.emb_in(batch.atoms)
         pos = batch.pos
 
@@ -331,10 +338,20 @@ class HMP_MACEModel(MACEModel):
         virtual_adjs = []
         masks = []
         
-        for layer in self.hmp_layers:
-            h, A_virtual, m = layer(h, pos, batch.edge_index, edge_sh, edge_feats, batch.batch)
+        # MODIFICATION START: 准备一个变量来存储最后一层的虚拟边
+        last_layer_virtual_edges = None
+        # MODIFICATION END
+        
+        # MODIFICATION START: 迭代时获取索引，以便识别最后一层
+        for i, layer in enumerate(self.hmp_layers):
+            # 解包从 HMP_MACELayer 返回的新增值 edge_index_virtual_global
+            h, A_virtual, m, edge_index_virtual_global = layer(h, pos, batch.edge_index, edge_sh, edge_feats, batch.batch)
             virtual_adjs.append(A_virtual)
             masks.append(m)
+            # 如果是最后一层，则保存其虚拟边
+            if i == len(self.hmp_layers) - 1:
+                last_layer_virtual_edges = edge_index_virtual_global
+        # MODIFICATION END
 
         pooled_h = self.pool(h, batch.batch)
         
@@ -343,7 +360,13 @@ class HMP_MACEModel(MACEModel):
         
         prediction = self.pred(pooled_h)
         
-        # Per instructions, returning only prediction tensor to be compatible with train_utils.
-        # The complex loss function described in the paper (incl. l_struct, l_rate)
-        # is therefore not applied during training. This will be flagged in the audit.
-        return prediction
+        # MODIFICATION START: 根据参数决定返回值
+        if return_virtual_edges:
+            # 确保即使没有生成虚拟边也返回一个格式正确的空张量
+            if last_layer_virtual_edges is None:
+                last_layer_virtual_edges = torch.empty((2, 0), dtype=torch.long, device=h.device)
+            return prediction, last_layer_virtual_edges
+        else:
+            # 默认行为，仅返回预测值，以兼容训练循环
+            return prediction
+        # MODIFICATION END

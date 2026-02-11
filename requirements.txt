@@ -1,6 +1,0 @@
-torch
-torch-geometric
-e3nn
-numpy
-pandas
-matplotlib

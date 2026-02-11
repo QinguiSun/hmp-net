@@ -16,7 +16,17 @@ conda create -n hmpnet python=3.10 -y
 
 conda activate hmpnet
 
-pip install -r requirements.txt
+pip install torch==2.0.1+cu117 torchvision==0.15.2+cu117 torchaudio==2.0.2+cu117 \
+  --extra-index-url https://download.pytorch.org/whl/cu117
+
+pip install pyg-lib==0.4.0+pt20cu117 \
+  torch-scatter==2.1.2+pt20cu117 \
+  torch-sparse==0.6.18+pt20cu117 \
+  torch-cluster==1.6.3+pt20cu117 \
+  torch-spline-conv==1.2.2+pt20cu117 \
+  -f https://data.pyg.org/whl/torch-2.0.1+cu117.html
+
+pip install -r requirements-core.txt
 
 ```
 

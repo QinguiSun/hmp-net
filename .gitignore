@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+*.log
+
+# Data / artifacts
+Databases/
+dataset/
+data/
+outputs/
+runs/
+wandb/
+logs/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# local datasets (do not commit)
+datasets/

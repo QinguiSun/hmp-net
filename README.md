@@ -32,7 +32,7 @@ pip install -r requirements-core.txt
 
   
 
-## Reproduction
+## Reproductive
 
 To download datasets from the following and save them in the `datasets` directory.
 > Ko, T.W., Finkler, J. A., Goedecker, S. & Behler, J. A fourth-generation high-dimensional neural network potential with accurate electrostatics including non-local charge transfer. Materials Cloud Archive 2020.X, [https://doi.org/10.24435/materialscloud:f3-yh](https://doi.org/10.24435/materialscloud:f3-yh) (2020).
